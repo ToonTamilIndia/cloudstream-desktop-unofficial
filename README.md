@@ -69,9 +69,9 @@ Video playback is handled via an Embedded MPV Engine. The `:player-abstraction` 
 ## 🚀 Setup & Installation
 
 ### For End Users
-Simply download the latest `.msi` installer from the **Releases** tab and double-click it. Everything is pre-bundled (including the hardware-accelerated video player). There is absolutely zero configuration required.
+Simply download the [latest pre-alpha `.msi` installer](https://github.com/errorcode26/cloudstream-desktop-unofficial/releases/tag/v0.1-alpha) and double-click it. Everything is pre-bundled (including the hardware-accelerated video player). There is absolutely zero configuration required.
 
-> 🛡️ **Security:** The official `.msi` release has been scanned and verified. View the [VirusTotal Scan Results](https://www.virustotal.com/gui/file/fdd8a2ad621569d1fc6bf2e2af6bdc8b1a28a941f1259b0f8b5bbf7a44f25238/detection).
+> 🛡️ **Security:** The official `.msi` release has been scanned and verified. View the [VirusTotal Scan Results](https://www.virustotal.com/gui/file/8bbcc169fafb0eac3ba7fa426aefc1997a748a2f6b812550e57140be7c460324?nocache=1).
 
 ---
 
