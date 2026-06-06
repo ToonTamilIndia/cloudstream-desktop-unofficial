@@ -1,0 +1,50 @@
+# Gradle & Builds
+.gradle
+build/
+**/build/
+**/bin/
+**/out/
+
+# IDEs
+.idea/
+*.iml
+*.iws
+.vscode/
+
+# Desktop App specific
+desktop-app/mpv/
+desktop-app/appResources/
+*.jar
+*.cs3
+
+# Exceptions
+!gradle/wrapper/gradle-wrapper.jar
+
+# Executables and Native Binaries
+*.exe
+*.msi
+*.dll
+*.so
+*.dylib
+ms-playwright/
+playwright/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Kotlin
+.kotlin_module
+
+# Local Configs
+local.properties
+
+# Logs
+logs/
+*.log
+
+# Scratch Test Files
+test_*.kt
+test_*.kts
+test-repos/
+.gemini/
