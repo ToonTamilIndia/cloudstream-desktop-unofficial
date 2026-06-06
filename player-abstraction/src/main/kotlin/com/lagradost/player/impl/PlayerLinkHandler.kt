@@ -62,7 +62,7 @@ object PlayerLinkHandler {
         }
 
         val headers = buildHeaderMap(link)
-        if (headers.values.any { it.isBlank() && it != "" }) {
+        if (headers.values.any { it.isBlank() }) {
             return Result.failure(IllegalArgumentException("Stream headers contain invalid empty values."))
         }
 

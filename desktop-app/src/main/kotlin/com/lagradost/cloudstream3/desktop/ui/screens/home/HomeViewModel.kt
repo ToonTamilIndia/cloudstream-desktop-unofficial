@@ -168,7 +168,9 @@ class HomeViewModel(private val coroutineScope: CoroutineScope) {
                                 }
                             } catch (e: kotlinx.coroutines.CancellationException) {
                                 throw e
-                            } catch (e: Throwable) {}
+                            } catch (e: Throwable) {
+                                DesktopErrorReporter.report("Search provider ${p.name} failed", e)
+                            }
                         }
                     }
                 }
