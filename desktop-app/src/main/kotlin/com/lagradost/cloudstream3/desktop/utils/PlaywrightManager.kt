@@ -94,17 +94,17 @@ object PlaywrightManager {
         } else {
             // Linux — which-based detection
             val whichCommands = listOf(
-                "microsoft-edge-stable" to "msedge" to "chromium",
-                "microsoft-edge" to "msedge" to "chromium",
-                "google-chrome-stable" to "chrome" to "chromium",
-                "google-chrome" to "chrome" to "chromium",
-                "chromium-browser" to null to "chromium",
-                "chromium" to null to "chromium",
-                "brave-browser" to null to "chromium",
-                "brave" to null to "chromium",
-                "firefox" to null to "firefox",
-                "firefox-developer-edition" to null to "firefox",
-                "firefox-nightly" to null to "firefox",
+                Triple("microsoft-edge-stable", "msedge", "chromium"),
+                Triple("microsoft-edge", "msedge", "chromium"),
+                Triple("google-chrome-stable", "chrome", "chromium"),
+                Triple("google-chrome", "chrome", "chromium"),
+                Triple("chromium-browser", null, "chromium"),
+                Triple("chromium", null, "chromium"),
+                Triple("brave-browser", null, "chromium"),
+                Triple("brave", null, "chromium"),
+                Triple("firefox", null, "firefox"),
+                Triple("firefox-developer-edition", null, "firefox"),
+                Triple("firefox-nightly", null, "firefox"),
             )
             for ((cmd, channel, browserType) in whichCommands) {
                 addIfExists(cmd, channel, browserType)
@@ -221,11 +221,11 @@ object PlaywrightManager {
                 if (channel != null) {
                     launchOptions.setChannel(channel)
                 } else {
-                    executable?.let { launchOptions.setExecutablePath(it) }
+                    executable?.let { launchOptions.setExecutablePath(File(it).toPath()) }
                 }
                 browser = playwright!!.chromium().launch(launchOptions)
             } else {
-                executable?.let { launchOptions.setExecutablePath(it) }
+                executable?.let { launchOptions.setExecutablePath(File(it).toPath()) }
                 browser = playwright!!.firefox().launch(launchOptions)
             }
         }
