@@ -63,6 +63,8 @@ fun HomeCategorySection(
                         } else {
                             errorMessage = "No items found."
                         }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
                     } catch (e: Throwable) {
                         DesktopErrorReporter.report("getMainPage failed for ${pageData.name}", e)
                         errorMessage = e.localizedMessage ?: "Connection error"
@@ -109,13 +111,9 @@ fun HomeCategorySection(
         }
 
         if (isLoading) {
-            Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Loading...", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
-                }
-            }
+            com.lagradost.cloudstream3.desktop.ui.components.InlineSectionLoader(
+                statusText = "Loading ${pageData.name}...",
+            )
         } else if (homePage != null && homePage!!.items.isNotEmpty()) {
             homePage!!.items.forEachIndexed { sectionIndex, section ->
                 if (isFirstPage && sectionIndex == 0 && section.list.size >= 3) {

@@ -39,6 +39,8 @@ fun EpisodeCard(ep: Episode, isLatest: Boolean, history: WatchHistory?, provider
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val epImg = provider.fixUrlNull(ep.posterUrl)
+                ?: provider.fixUrlNull(data.backgroundPosterUrl)
+                ?: provider.fixUrlNull(data.posterUrl)
             if (epImg != null) {
                 AsyncImage(
                     model = epImg,

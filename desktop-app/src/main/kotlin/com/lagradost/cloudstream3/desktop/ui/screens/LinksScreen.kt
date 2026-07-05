@@ -4,6 +4,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
@@ -31,11 +33,17 @@ import com.lagradost.common.storage.DesktopDataStore
 import com.lagradost.common.storage.WatchHistory
 import com.lagradost.player.impl.PlayerLinkHandler
 import com.lagradost.player.impl.VlcPlayer
+import com.lagradost.player.impl.MpvPlayer
+import com.lagradost.player.impl.KodiPlayer
+import com.lagradost.player.impl.KodiConfig
+import com.lagradost.player.impl.KodiAuthException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 
 private val vlcPlayer = VlcPlayer()
+private val mpvPlayer = MpvPlayer()
+private val kodiPlayer = KodiPlayer()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,7 +55,14 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
 
     val coroutineScope = rememberCoroutineScope()
     val playVideo = com.lagradost.cloudstream3.desktop.ui.LocalVideoPlayer.current
-    var selectedPlayer by remember { mutableStateOf(DesktopDataStore.getKey<String>("preferred_player") ?: "mpv") }
+    var selectedPlayer by remember {
+        mutableStateOf(
+            when (val saved = DesktopDataStore.getKey<String>("preferred_player") ?: "embedded") {
+                "web" -> "embedded"
+                else -> saved
+            },
+        )
+    }
     var isLaunchingPlayer by remember { mutableStateOf(false) }
     var playerLaunchError by remember { mutableStateOf<String?>(null) }
     var scrapeJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
@@ -55,6 +70,11 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
 
     var selectedQuality by remember { mutableStateOf<String?>(null) }
     var currentPlayingUrl by remember { mutableStateOf<String?>(null) }
+
+    var showKodiAuthDialog by remember { mutableStateOf(false) }
+    var kodiPendingLink by remember { mutableStateOf<ExtractorLink?>(null) }
+    var kodiAuthUser by remember { mutableStateOf(KodiConfig.username) }
+    var kodiAuthPass by remember { mutableStateOf(KodiConfig.password) }
 
     val availableQualities = remember(links.size) { links.map { it.quality.toString() }.distinct().sorted() }
     val filteredLinks = remember(links.size, selectedQuality) {
@@ -142,13 +162,8 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
             } else {
                 isLaunchingPlayer = true
                 currentPlayingUrl = link.url
-                val effectivePlayer =
-                    if (selectedPlayer == "vlc" && PlayerLinkHandler.shouldPreferMpv(link)) {
-                        "mpv"
-                    } else {
-                        selectedPlayer
-                    }
-                statusText = "Launching ${effectivePlayer.uppercase()}..."
+                val effectivePlayer = selectedPlayer
+                statusText = "Launching ${selectedPlayer.uppercase()}..."
 
                 val latestHistory = DesktopDataStore.getEpisodeWatched(history.parentId, history.episodeId) ?: history
                 val startSec = PlayerLinkHandler.resumeStartSeconds(latestHistory.position, latestHistory.duration)
@@ -168,6 +183,50 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
                             currentPlayingUrl = null
                         }
                     }
+                } else if (effectivePlayer == "mpv") {
+                    coroutineScope.launch {
+                        val result = mpvPlayer.play(link, displayTitle, subUrls, startMs)
+                        if (result.isSuccess) {
+                            statusText = "Playing in external MPV: ${link.name}"
+                            playerLaunchError = null
+                        } else {
+                            playerLaunchError = result.exceptionOrNull()?.message ?: "Failed to launch MPV"
+                            statusText = "Could not start MPV."
+                            isLaunchingPlayer = false
+                            currentPlayingUrl = null
+                        }
+                    }
+                } else if (effectivePlayer == "kodi") {
+                    coroutineScope.launch {
+                        try {
+                            val result = kodiPlayer.play(link, displayTitle, subUrls, startMs)
+                            if (result.isSuccess) {
+                                statusText = "Sent to Kodi: ${link.name}"
+                                playerLaunchError = null
+                            } else {
+                                val error = result.exceptionOrNull()
+                                if (error is KodiAuthException) {
+                                    kodiPendingLink = link
+                                    kodiAuthUser = KodiConfig.username
+                                    kodiAuthPass = KodiConfig.password
+                                    showKodiAuthDialog = true
+                                } else {
+                                    playerLaunchError = error?.message ?: "Failed to send to Kodi"
+                                }
+                                statusText = "Could not reach Kodi."
+                                isLaunchingPlayer = false
+                                currentPlayingUrl = null
+                            }
+                        } catch (e: KodiAuthException) {
+                            kodiPendingLink = link
+                            kodiAuthUser = KodiConfig.username
+                            kodiAuthPass = KodiConfig.password
+                            showKodiAuthDialog = true
+                            statusText = "Kodi authentication required."
+                            isLaunchingPlayer = false
+                            currentPlayingUrl = null
+                        }
+                    }
                 } else {
                     val initialIndex = filteredLinks.indexOfFirst { it.url == link.url }.coerceAtLeast(0)
                     playVideo(
@@ -178,6 +237,7 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
                             subtitles = subtitles.filter { it.url.isNotBlank() },
                             startPositionMs = startMs,
                             history = history,
+                            useLocalProxy = effectivePlayer == "local_proxy",
                             onError = { err ->
                                 embeddedError = err
                             },
@@ -188,7 +248,11 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
                             },
                         ),
                     )
-                    statusText = "Playing in embedded player: ${link.name}"
+                    statusText = if (effectivePlayer == "local_proxy") {
+                        "Playing through Local Proxy: ${link.name}"
+                    } else {
+                        "Playing in Embedded Player: ${link.name}"
+                    }
                     // We don't set isLaunchingPlayer=false here because the embedded player is an overlay
                     // and we want it to block interaction until it closes.
                 }
@@ -342,6 +406,61 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
                         },
                     )
                 }
+
+                if (showKodiAuthDialog) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            showKodiAuthDialog = false
+                            kodiPendingLink = null
+                        },
+                        title = { Text("Kodi Authentication") },
+                        text = {
+                            Column(modifier = Modifier.width(300.dp)) {
+                                Text(
+                                    "Kodi at ${KodiConfig.host}:${KodiConfig.port} requires authentication.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                OutlinedTextField(
+                                    value = kodiAuthUser,
+                                    onValueChange = { kodiAuthUser = it },
+                                    label = { Text("Username") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = kodiAuthPass,
+                                    onValueChange = { kodiAuthPass = it },
+                                    label = { Text("Password") },
+                                    singleLine = true,
+                                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                KodiConfig.username = kodiAuthUser
+                                KodiConfig.password = kodiAuthPass
+                                DesktopDataStore.setKey("kodi_user", kodiAuthUser)
+                                DesktopDataStore.setKey("kodi_pass", kodiAuthPass)
+                                showKodiAuthDialog = false
+                                val pending = kodiPendingLink
+                                kodiPendingLink = null
+                                if (pending != null) {
+                                    playLink(pending)
+                                }
+                            }) { Text("Connect") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                showKodiAuthDialog = false
+                                kodiPendingLink = null
+                            }) { Text("Cancel") }
+                        },
+                    )
+                }
             }
         }
     }
@@ -401,11 +520,32 @@ private fun PlayerSelector(selectedPlayer: String, onSelect: (String) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("Player", style = MaterialTheme.typography.labelLarge, color = DesktopUi.TextMuted)
         Spacer(modifier = Modifier.width(16.dp))
+        FilterChip(
+            selected = selectedPlayer == "embedded",
+            onClick = { onSelect("embedded") },
+            label = { Text("Embedded") },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = DesktopUi.AccentSoft,
+                selectedLabelColor = DesktopUi.Accent,
+            ),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        FilterChip(
+            selected = selectedPlayer == "vlc",
+            onClick = { onSelect("vlc") },
+            label = { Text("VLC") },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = DesktopUi.AccentSoft,
+                selectedLabelColor = DesktopUi.Accent,
+            ),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
         FilterChip(
             selected = selectedPlayer == "mpv",
             onClick = { onSelect("mpv") },
@@ -417,9 +557,19 @@ private fun PlayerSelector(selectedPlayer: String, onSelect: (String) -> Unit) {
         )
         Spacer(modifier = Modifier.width(8.dp))
         FilterChip(
-            selected = selectedPlayer == "vlc",
-            onClick = { onSelect("vlc") },
-            label = { Text("VLC") },
+            selected = selectedPlayer == "kodi",
+            onClick = { onSelect("kodi") },
+            label = { Text("Kodi") },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = DesktopUi.AccentSoft,
+                selectedLabelColor = DesktopUi.Accent,
+            ),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        FilterChip(
+            selected = selectedPlayer == "local_proxy",
+            onClick = { onSelect("local_proxy") },
+            label = { Text("Local Proxy") },
             colors = FilterChipDefaults.filterChipColors(
                 selectedContainerColor = DesktopUi.AccentSoft,
                 selectedLabelColor = DesktopUi.Accent,
@@ -504,4 +654,3 @@ private fun StreamLinkCard(
         }
     }
 }
-

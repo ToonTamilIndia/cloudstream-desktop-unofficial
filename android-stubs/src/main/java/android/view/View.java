@@ -2,6 +2,11 @@ package android.view;
 
 @android.annotation.Stub
 public class View {
+    private int id;
+    private static final java.util.concurrent.atomic.AtomicInteger NEXT_ID =
+        new java.util.concurrent.atomic.AtomicInteger(1);
+    private int paddingLeft, paddingTop, paddingRight, paddingBottom;
+
     public static final int VISIBLE = 0;
     public static final int INVISIBLE = 4;
     public static final int GONE = 8;
@@ -34,8 +39,12 @@ public class View {
     }
 
     public void setPadding(int left, int top, int right, int bottom) {
-        // No-op for desktop stub
+        paddingLeft = left; paddingTop = top; paddingRight = right; paddingBottom = bottom;
     }
+    public int getPaddingLeft() { return paddingLeft; }
+    public int getPaddingTop() { return paddingTop; }
+    public int getPaddingRight() { return paddingRight; }
+    public int getPaddingBottom() { return paddingBottom; }
 
     public void setBackgroundColor(int color) {
         // No-op for desktop stub
@@ -59,5 +68,8 @@ public class View {
     }
 
     public void setId(int id) {
+        this.id = id;
     }
+    public int getId() { return id; }
+    public static int generateViewId() { return NEXT_ID.getAndIncrement(); }
 }

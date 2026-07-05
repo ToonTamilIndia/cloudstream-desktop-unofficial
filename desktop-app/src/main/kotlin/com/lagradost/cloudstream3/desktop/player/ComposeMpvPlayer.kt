@@ -18,6 +18,7 @@ fun ComposeMpvPlayer(
     title: String?,
     subtitles: List<com.lagradost.cloudstream3.SubtitleFile>,
     startPositionMs: Long,
+    useLocalProxy: Boolean,
     onPlaybackReady: () -> Unit,
     onPlaybackError: (String) -> Unit,
     onFinished: () -> Unit,
@@ -95,24 +96,38 @@ fun ComposeMpvPlayer(
 
                 if (mpvHandle != null) return // Prevent multiple initializations (multi-audio bug)
 
-                // Find MPV directory and tell JNA where to find the DLL
+                // Find MPV library and tell JNA where to find it
                 val isWindows = System.getProperty("os.name").lowercase().contains("win")
                 val mpvExe = resolveMpvExecutable(isWindows)
-                if (mpvExe == null) {
-                    onPlaybackError("MPV executable not found.")
+                val mpvDir = if (mpvExe == null || mpvExe.absolutePath == "/") {
+                    // On Linux/macOS, JNA will search system library paths automatically
+                    if (isWindows) {
+                        onPlaybackError("MPV library not found. Please install mpv.")
+                        return
+                    }
+                    null
+                } else {
+                    val dir = mpvExe.parentFile
+                    if (dir != null) {
+                        System.setProperty("jna.library.path", dir.absolutePath)
+                    }
+                    dir
+                }
+
+                val lib = try {
+                    MpvLibrary.INSTANCE
+                } catch (t: Throwable) {
+                    com.lagradost.common.logging.AppLogger.e("Unable to load libmpv", t)
+                    onPlaybackError(MpvLibrary.installHint())
                     return
                 }
-                val mpvDir = mpvExe.parentFile
-                System.setProperty("jna.library.path", mpvDir.absolutePath)
-
-                val lib = MpvLibrary.INSTANCE
                 val handle = lib.mpv_create() ?: run {
                     onPlaybackError("Failed to initialize MPV Engine.")
                     return
                 }
                 mpvHandle = handle
 
-                val portableConfigDir = File(mpvDir, "portable_config")
+                val portableConfigDir = if (mpvDir != null) File(mpvDir, "portable_config") else null
 
                 lib.mpv_set_option_string(handle, "osc", "no")
                 lib.mpv_set_option_string(handle, "vo", "gpu")
@@ -120,7 +135,7 @@ fun ComposeMpvPlayer(
                 // Apply User Settings & Logging
                 PlayerConfig.applyMpvSettings(handle, lib)
 
-                if (portableConfigDir.exists()) {
+                if (portableConfigDir != null && portableConfigDir.exists()) {
                     val configDirStr = portableConfigDir.absolutePath.replace("\\", "/")
                     lib.mpv_set_option_string(handle, "config-dir", configDirStr)
                     lib.mpv_set_option_string(handle, "config", "yes")
@@ -142,18 +157,26 @@ fun ComposeMpvPlayer(
                 lib.mpv_set_option_string(handle, "idle", "yes")
 
                 // Network reliability optimizations
-                val validated = PlayerLinkHandler.validate(link, title).getOrElse {
+                val validated = PlayerLinkHandler.validate(link, title, useLocalProxy).getOrElse {
                     onPlaybackError(it.message ?: "Validation failed")
                     return
                 }
+                PlayerLinkHandler.playbackSupport(link, PlayerLinkHandler.PlayerBackend.MPV).let { support ->
+                    if (!support.supported) {
+                        onPlaybackError(support.reason ?: "MPV does not support this stream.")
+                        return
+                    }
+                }
+
+                val lavfAppendOptions = mutableListOf<String>()
 
                 when (validated.streamKind) {
                     PlayerLinkHandler.StreamKind.HLS -> {
                         lib.mpv_set_option_string(handle, "hls-bitrate", "max")
-                        lib.mpv_set_option_string(handle, "demuxer-lavf-o-append", "reconnect=1,reconnect_streamed=1,reconnect_on_http_error=403,404,429,500,503")
+                        lavfAppendOptions.add("reconnect=1,reconnect_streamed=1,reconnect_on_http_error=403,404,429,500,503")
                     }
                     PlayerLinkHandler.StreamKind.DASH -> {
-                        lib.mpv_set_option_string(handle, "demuxer-lavf-o-append", "reconnect=1,reconnect_streamed=1")
+                        lavfAppendOptions.add("reconnect=1,reconnect_streamed=1")
                     }
                     else -> {}
                 }
@@ -190,8 +213,39 @@ fun ComposeMpvPlayer(
                     }
                 }
 
+                // ClearKey DRM: pass decryption keys to MPV if present
+                val drmInfo = validated.drmInfo
+                if (drmInfo != null) {
+                    val drmKey = drmInfo.key
+                    val drmKid = drmInfo.kid
+                    if (drmKey != null && drmKid != null) {
+                        try {
+                            val keyHex = base64ToHex(drmKey)
+                            val kidHex = base64ToHex(drmKid)
+                            lavfAppendOptions.add("decryption_key=$keyHex")
+                            lavfAppendOptions.add("decryption_kid=$kidHex")
+                            com.lagradost.common.logging.AppLogger.i("Applied ClearKey DRM decryption for ${validated.displayTitle}")
+                        } catch (e: Exception) {
+                            com.lagradost.common.logging.AppLogger.e("Failed to apply DRM decryption keys", e)
+                        }
+                    } else if (drmInfo.licenseUrl != null) {
+                        com.lagradost.common.logging.AppLogger.w("Widevine/PlayReady DRM detected but not supported on desktop: ${drmInfo.licenseUrl}")
+                    }
+                }
+
+                // Apply accumulated demuxer-lavf-o-append options in one shot
+                if (lavfAppendOptions.isNotEmpty()) {
+                    lib.mpv_set_option_string(handle, "demuxer-lavf-o-append", lavfAppendOptions.joinToString(","))
+                }
+
                 com.lagradost.common.logging.AppLogger.i("Initializing embedded MPV for URL: ${validated.url}")
-                lib.mpv_initialize(handle)
+                val initCode = lib.mpv_initialize(handle)
+                if (initCode < 0) {
+                    mpvHandle = null
+                    lib.mpv_terminate_destroy(handle)
+                    onPlaybackError("MPV initialization failed (error $initCode). ${MpvLibrary.installHint()}")
+                    return
+                }
 
                 val urlTarget = if (validated.useUrlFile) {
                     PlayerLinkHandler.writeUrlListFile("cloudstream_mpv_url_", validated.displayTitle, validated.url).absolutePath
@@ -312,10 +366,11 @@ fun ComposeMpvPlayer(
 }
 
 private fun resolveMpvExecutable(isWindows: Boolean): File? {
-    val names = if (isWindows) listOf("libmpv-2.dll") else listOf("libmpv.so", "libmpv.dylib")
-    
+    // Bundled (portable) paths
     val resDir = System.getProperty("compose.application.resources.dir")
-    
+
+    val names = if (isWindows) listOf("libmpv-2.dll") else listOf("libmpv.so", "libmpv.dylib")
+
     val candidates = listOfNotNull(
         resDir?.let { File(it, "mpv") },
         File("mpv"),
@@ -329,7 +384,70 @@ private fun resolveMpvExecutable(isWindows: Boolean): File? {
             if (f.isFile) return f.absoluteFile
         }
     }
-    return null
+
+    // On Linux/macOS, check system-installed library paths
+    if (!isWindows) {
+        val osName = System.getProperty("os.name").lowercase()
+
+        // Check ldconfig first (Linux)
+        if (osName.contains("linux")) {
+            try {
+                val process = Runtime.getRuntime().exec(arrayOf("ldconfig", "-p"))
+                val reader = java.io.BufferedReader(java.io.InputStreamReader(process.inputStream))
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    val l = line!!
+                    // Matches lines like: "libmpv.so (libc6,x86-64) => /usr/lib/x86_64-linux-gnu/libmpv.so"
+                    val match = Regex("""\s+(libmpv\S*)\s+.*=>\s+(/\S+)""").find(l)
+                    if (match != null) {
+                        val libFile = File(match.groupValues[2])
+                        if (libFile.isFile) {
+                            return libFile.absoluteFile
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // Common system library paths
+        val systemPaths = listOf(
+            "/usr/lib/x86_64-linux-gnu",
+            "/usr/lib/aarch64-linux-gnu",
+            "/usr/lib/arm-linux-gnueabihf",
+            "/usr/lib",
+            "/usr/local/lib",
+            "/lib/x86_64-linux-gnu",
+            "/lib/aarch64-linux-gnu",
+            "/opt/homebrew/lib",
+            "/usr/local/opt/mpv/lib",
+            "/usr/lib64",
+        )
+        for (dir in systemPaths) {
+            val dirFile = File(dir)
+            if (dirFile.isDirectory) {
+                for (name in names) {
+                    val f = File(dirFile, name)
+                    if (f.isFile) return f.absoluteFile
+                }
+                // Also search for versioned .so files like libmpv.so.1, libmpv.so.2
+                val versioned = dirFile.listFiles { _, name ->
+                    name.startsWith("libmpv.so") && name.endsWith(".so")
+                }
+                if (!versioned.isNullOrEmpty()) {
+                    return versioned.first().absoluteFile
+                }
+            }
+        }
+    }
+
+    // If nothing found, still return a non-null fallback so JNA can try system library path
+    // This prevents the "MPV executable not found" early exit
+    return File("/")
+}
+
+private fun base64ToHex(base64: String): String {
+    val decoded = java.util.Base64.getDecoder().decode(base64.trim())
+    return decoded.joinToString("") { "%02x".format(it) }
 }
 
 private fun awtKeyToMpv(e: KeyEvent): String? {

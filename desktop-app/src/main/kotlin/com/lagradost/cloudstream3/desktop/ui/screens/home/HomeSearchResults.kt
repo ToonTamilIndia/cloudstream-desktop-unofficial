@@ -22,13 +22,9 @@ fun HomeSearchResults(
     onItemClick: (MainAPI, SearchResponse, String?) -> Unit,
 ) {
     if (isLoadingSearch && searchResultsGrouped.isNullOrEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator()
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Loading...", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
-            }
-        }
+        com.lagradost.cloudstream3.desktop.ui.components.PageLoadingIndicator(
+            statusText = "Searching...",
+        )
     } else if (searchResultsGrouped != null) {
         if (searchResultsGrouped.isNotEmpty()) {
             LazyColumn(

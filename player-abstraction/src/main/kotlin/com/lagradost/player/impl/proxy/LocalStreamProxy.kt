@@ -8,6 +8,7 @@ import io.ktor.server.application.call
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.response.header
+import io.ktor.server.request.queryString
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondBytesWriter
@@ -55,7 +56,18 @@ object LocalStreamProxy {
 
     data class ProxySession(
         val headers: Map<String, String>,
-    )
+        val drmKey: ByteArray? = null,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is ProxySession) return false
+            return headers == other.headers && drmKey.contentEquals(other.drmKey)
+        }
+
+        override fun hashCode(): Int {
+            return 31 * headers.hashCode() + (drmKey?.contentHashCode() ?: 0)
+        }
+    }
 
     // Capped LRU cache to prevent memory leaks from abandoned video sessions
     private val sessions = java.util.Collections.synchronizedMap(
@@ -84,6 +96,9 @@ object LocalStreamProxy {
                 get("/proxy") {
                     handleRequest(call)
                 }
+                get("/dash/{s}/{b}/{path...}") {
+                    handleDashResource(call)
+                }
             }
         }.start(wait = false)
 
@@ -99,15 +114,68 @@ object LocalStreamProxy {
         sessions.clear()
     }
 
-    fun registerSession(headers: Map<String, String>): String {
+    fun registerSession(headers: Map<String, String>, drmKey: ByteArray? = null): String {
         val sessionId = UUID.randomUUID().toString()
-        sessions[sessionId] = ProxySession(headers)
+        sessions[sessionId] = ProxySession(headers, drmKey)
         return sessionId
     }
 
     fun buildProxyUrl(sessionId: String, url: String): String {
         val encodedUrl = Base64.getUrlEncoder().withoutPadding().encodeToString(url.toByteArray(Charsets.UTF_8))
         return "http://127.0.0.1:$port/proxy?s=$sessionId&u=$encodedUrl"
+    }
+
+    private fun buildDashBaseUrl(sessionId: String, baseUrl: String): String {
+        val encodedBase = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(baseUrl.toByteArray(Charsets.UTF_8))
+        return "http://127.0.0.1:$port/dash/$sessionId/$encodedBase/"
+    }
+
+    private suspend fun handleDashResource(call: io.ktor.server.application.ApplicationCall) {
+        val sessionId = call.parameters["s"] ?: return call.respond(HttpStatusCode.NotFound)
+        val encodedBase = call.parameters["b"] ?: return call.respond(HttpStatusCode.NotFound)
+        val session = sessions[sessionId] ?: return call.respond(HttpStatusCode.NotFound)
+        val base = try {
+            String(Base64.getUrlDecoder().decode(encodedBase), Charsets.UTF_8)
+        } catch (_: IllegalArgumentException) {
+            return call.respond(HttpStatusCode.BadRequest)
+        }
+        val path = call.parameters.getAll("path")?.joinToString("/").orEmpty()
+        val target = URI(base).resolve(path).toString() +
+            call.request.queryString().takeIf { it.isNotBlank() }?.let { "?$it" }.orEmpty()
+        proxyRemoteResource(call, target, session)
+    }
+
+    private suspend fun proxyRemoteResource(
+        call: io.ktor.server.application.ApplicationCall,
+        url: String,
+        session: ProxySession,
+    ) {
+        val headers = session.headers.toMutableMap().apply {
+            keys.filter { it.equals("Accept-Encoding", true) }.forEach { remove(it) }
+            call.request.headers["Range"]?.let { put("Range", it) }
+        }
+        val request = okhttp3.Request.Builder().url(url).apply {
+            headers.forEach { (key, value) -> header(key, value) }
+        }.build()
+        val response = try {
+            proxyClient.newCall(request).await()
+        } catch (e: Exception) {
+            AppLogger.e("DASH proxy request failed: $url: ${e.message}")
+            return call.respond(HttpStatusCode.BadGateway)
+        }
+        response.use {
+            if (!it.isSuccessful) return call.respond(HttpStatusCode.fromValue(it.code))
+            it.header("Content-Range")?.let { value -> call.response.header("Content-Range", value) }
+            it.header("Accept-Ranges")?.let { value -> call.response.header("Accept-Ranges", value) }
+            val bytes = withContext(ProxyIoDispatcher) { it.body?.bytes() ?: ByteArray(0) }
+            val type = try {
+                ContentType.parse(it.header("Content-Type") ?: "application/octet-stream")
+            } catch (_: Exception) {
+                ContentType.Application.OctetStream
+            }
+            call.respondBytes(bytes, type, HttpStatusCode.fromValue(it.code))
+        }
     }
 
     private suspend fun handleRequest(call: io.ktor.server.application.ApplicationCall) {
@@ -169,6 +237,8 @@ object LocalStreamProxy {
                         false
                     }
                 }
+            val isMpd = url.contains(".mpd", ignoreCase = true) ||
+                contentTypeStr.contains("dash+xml", ignoreCase = true)
 
             if (isM3u8) {
                 val m3u8Content = withContext(ProxyIoDispatcher) {
@@ -181,41 +251,73 @@ object LocalStreamProxy {
 
                 call.response.header("Content-Type", "application/vnd.apple.mpegurl")
                 call.respondBytes(bytes, status = HttpStatusCode.OK)
+            } else if (isMpd) {
+                val mpd = withContext(ProxyIoDispatcher) { response.body?.string() ?: "" }
+                val rewritten = rewriteMpd(mpd, response.request.url.toString(), sessionId)
+                call.respondBytes(
+                    rewritten.toByteArray(Charsets.UTF_8),
+                    ContentType.parse("application/dash+xml"),
+                    HttpStatusCode.OK,
+                )
             } else {
-                response.header("Content-Range")?.let { call.response.header("Content-Range", it) }
-                response.header("Accept-Ranges")?.let { call.response.header("Accept-Ranges", it) }
+                val drmKey = session.drmKey
+                val isEncryptedSegment = drmKey != null &&
+                    (contentTypeStr.contains("mp4", ignoreCase = true) ||
+                     contentTypeStr.contains("octet-stream", ignoreCase = true) ||
+                     contentTypeStr.contains("binary", ignoreCase = true))
 
-                val cl = response.body?.contentLength() ?: -1L
-                val contentLengthParam = if (cl >= 0) cl else null
-
-                val parsedContentType = try {
-                    ContentType.parse(contentTypeStr)
-                } catch (e: Exception) {
-                    ContentType.Application.OctetStream
-                }
-
-                // Stream chunks asynchronously to Ktor
-                call.respondBytesWriter(
-                    contentType = parsedContentType,
-                    status = HttpStatusCode.fromValue(response.code),
-                    contentLength = contentLengthParam,
-                ) {
-                    val streamSource = response.body?.source() ?: return@respondBytesWriter
-                    val buffer = ByteArray(16384)
-                    try {
-                        while (!isClosedForWrite) {
-                            val bytesRead = withContext(ProxyIoDispatcher) {
-                                streamSource.read(buffer)
-                            }
-                            if (bytesRead == -1) break
-                            writeFully(buffer, 0, bytesRead)
-                            flush()
-                        }
+                if (isEncryptedSegment) {
+                    val rawBytes = withContext(ProxyIoDispatcher) {
+                        response.body?.bytes() ?: ByteArray(0)
+                    }
+                    val decryptor = CencDecryptor(rawBytes, drmKey)
+                    val finalBytes = if (decryptor.isPossiblyCencEncrypted()) {
+                        AppLogger.i("LocalStreamProxy: CENC-encrypted segment detected, decrypting...")
+                        decryptor.decrypt()
+                    } else {
+                        rawBytes
+                    }
+                    val parsedContentType = try {
+                        ContentType.parse(contentTypeStr)
                     } catch (e: Exception) {
-                        // Ignored (Client disconnected, e.g. user seeking)
-                    } finally {
-                        withContext(ProxyIoDispatcher) {
-                            response.body?.close()
+                        ContentType.Application.OctetStream
+                    }
+                    call.respondBytes(finalBytes, parsedContentType, HttpStatusCode.fromValue(response.code))
+                } else {
+                    response.header("Content-Range")?.let { call.response.header("Content-Range", it) }
+                    response.header("Accept-Ranges")?.let { call.response.header("Accept-Ranges", it) }
+
+                    val cl = response.body?.contentLength() ?: -1L
+                    val contentLengthParam = if (cl >= 0) cl else null
+
+                    val parsedContentType = try {
+                        ContentType.parse(contentTypeStr)
+                    } catch (e: Exception) {
+                        ContentType.Application.OctetStream
+                    }
+
+                    call.respondBytesWriter(
+                        contentType = parsedContentType,
+                        status = HttpStatusCode.fromValue(response.code),
+                        contentLength = contentLengthParam,
+                    ) {
+                        val streamSource = response.body?.source() ?: return@respondBytesWriter
+                        val buffer = ByteArray(16384)
+                        try {
+                            while (!isClosedForWrite) {
+                                val bytesRead = withContext(ProxyIoDispatcher) {
+                                    streamSource.read(buffer)
+                                }
+                                if (bytesRead == -1) break
+                                writeFully(buffer, 0, bytesRead)
+                                flush()
+                            }
+                        } catch (e: Exception) {
+                            // Ignored (Client disconnected, e.g. user seeking)
+                        } finally {
+                            withContext(ProxyIoDispatcher) {
+                                response.body?.close()
+                            }
                         }
                     }
                 }
@@ -253,6 +355,23 @@ object LocalStreamProxy {
             }
         }
         return rewritten
+    }
+
+    private fun rewriteMpd(content: String, manifestUrl: String, sessionId: String): String {
+        val manifestBase = URI(manifestUrl).resolve(".").toString()
+        val baseTag = Regex("""<BaseURL([^>]*)>([^<]+)</BaseURL>""", RegexOption.IGNORE_CASE)
+        val withBases = if (baseTag.containsMatchIn(content)) {
+            content.replace(baseTag) { match ->
+                val absolute = resolveUrl(manifestUrl, match.groupValues[2].trim())
+                "<BaseURL${match.groupValues[1]}>${buildDashBaseUrl(sessionId, absolute)}</BaseURL>"
+            }
+        } else {
+            content.replaceFirst(
+                Regex("""<MPD([^>]*)>""", RegexOption.IGNORE_CASE),
+                "$0<BaseURL>${buildDashBaseUrl(sessionId, manifestBase)}</BaseURL>",
+            )
+        }
+        return withBases
     }
 
     private fun resolveUrl(base: String, uri: String): String {

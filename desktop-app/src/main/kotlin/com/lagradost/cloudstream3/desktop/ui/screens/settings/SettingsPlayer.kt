@@ -10,6 +10,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.lagradost.cloudstream3.desktop.player.PlayerConfig
 import com.lagradost.common.storage.DesktopDataStore
+import com.lagradost.player.impl.KodiConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SettingsPlayer() {
@@ -136,6 +140,82 @@ fun SettingsPlayer() {
                     DesktopDataStore.setKey(PlayerConfig.PREF_SUB_BG, it)
                 },
             )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Kodi Remote", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        var kodiHost by remember { mutableStateOf(KodiConfig.host) }
+        var kodiPort by remember { mutableStateOf(KodiConfig.port.toString()) }
+        var kodiUser by remember { mutableStateOf(KodiConfig.username) }
+        var kodiPass by remember { mutableStateOf(KodiConfig.password) }
+        var kodiStatus by remember { mutableStateOf("") }
+        val coroutineScope = rememberCoroutineScope()
+
+        OutlinedTextField(
+            value = kodiHost,
+            onValueChange = {
+                kodiHost = it
+                KodiConfig.host = it
+                DesktopDataStore.setKey("kodi_host", it)
+            },
+            label = { Text("Kodi Host") },
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            singleLine = true,
+        )
+        OutlinedTextField(
+            value = kodiPort,
+            onValueChange = {
+                kodiPort = it
+                KodiConfig.port = it.toIntOrNull() ?: 8080
+                DesktopDataStore.setKey("kodi_port", it)
+            },
+            label = { Text("Kodi Port (default: 8080)") },
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            singleLine = true,
+        )
+        OutlinedTextField(
+            value = kodiUser,
+            onValueChange = {
+                kodiUser = it
+                KodiConfig.username = it
+                DesktopDataStore.setKey("kodi_user", it)
+            },
+            label = { Text("Username (optional)") },
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            singleLine = true,
+        )
+        OutlinedTextField(
+            value = kodiPass,
+            onValueChange = {
+                kodiPass = it
+                KodiConfig.password = it
+                DesktopDataStore.setKey("kodi_pass", it)
+            },
+            label = { Text("Password (optional)") },
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            singleLine = true,
+            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+        )
+        Button(
+            onClick = {
+                coroutineScope.launch {
+                    kodiStatus = "Testing..."
+                    val result = withContext(Dispatchers.IO) {
+                        com.lagradost.player.impl.KodiPlayer().testConnection()
+                    }
+                    kodiStatus = if (result.isSuccess) "Connected!" else "Failed: ${result.exceptionOrNull()?.message}"
+                }
+            },
+            modifier = Modifier.padding(top = 4.dp),
+        ) {
+            Text("Test Connection")
+        }
+        if (kodiStatus.isNotBlank()) {
+            Text(kodiStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
     }
 }

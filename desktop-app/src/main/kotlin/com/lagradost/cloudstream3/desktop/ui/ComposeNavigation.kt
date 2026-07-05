@@ -25,12 +25,14 @@ data class VideoLaunchData(
     val subtitles: List<com.lagradost.cloudstream3.SubtitleFile>,
     val startPositionMs: Long,
     val history: WatchHistory,
+    val useLocalProxy: Boolean = false,
     val onError: ((String) -> Unit)? = null,
     val onClosed: (() -> Unit)? = null,
 )
 
 val LocalVideoPlayer = androidx.compose.runtime.staticCompositionLocalOf<(VideoLaunchData?) -> Unit> { { } }
 val LocalWindowState = androidx.compose.runtime.staticCompositionLocalOf<androidx.compose.ui.window.WindowState?> { null }
+val LocalAwtWindow = androidx.compose.runtime.staticCompositionLocalOf<java.awt.Window?> { null }
 
 
 
@@ -90,6 +92,13 @@ fun CloudstreamApp() {
                             onErrorLogs = { showErrorsDialog = true },
                         ) {
                             ComposeLibraryScreen(navController)
+                        }
+                        is Screen.IPTV -> DesktopAppShell(
+                            navController = navController,
+                            title = "IPTV",
+                            onErrorLogs = { showErrorsDialog = true },
+                        ) {
+                            com.lagradost.cloudstream3.desktop.ui.screens.ComposeIptvScreen()
                         }
                         is Screen.Settings -> DesktopAppShell(
                             navController = navController,

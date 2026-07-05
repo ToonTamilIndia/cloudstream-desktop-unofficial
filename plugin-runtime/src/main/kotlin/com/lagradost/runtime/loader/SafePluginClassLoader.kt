@@ -1,6 +1,6 @@
 package com.lagradost.runtime.loader
 
-class SafePluginClassLoader(parent: ClassLoader) : ClassLoader(parent) {
+class SafePluginClassLoader(parent: ClassLoader, private val bypassReflection: Boolean = false) : ClassLoader(parent) {
     private val ghostCache = java.util.concurrent.ConcurrentHashMap<String, Class<*>>()
 
     override fun loadClass(name: String, resolve: Boolean): Class<*> {
@@ -93,10 +93,29 @@ class SafePluginClassLoader(parent: ClassLoader) : ClassLoader(parent) {
             mv5.visitEnd()
         }
 
+        if (!isInterface) {
+            cw.visitField(
+                org.objectweb.asm.Opcodes.ACC_PUBLIC + org.objectweb.asm.Opcodes.ACC_STATIC,
+                "INSTANCE",
+                "L$internalName;",
+                null, null
+            ).visitEnd()
+        }
+
         cw.visitEnd()
 
         val bytecode = cw.toByteArray()
         val clazz = defineClass(name, bytecode, 0, bytecode.size)
+
+        if (!isInterface) {
+            try {
+                val instanceField = clazz.getDeclaredField("INSTANCE")
+                instanceField.set(null, clazz.getDeclaredConstructor().newInstance())
+            } catch (_: Exception) {
+                // ignore
+            }
+        }
+
         ghostCache[name] = clazz
         return clazz
     }
@@ -151,9 +170,11 @@ class SafePluginClassLoader(parent: ClassLoader) : ClassLoader(parent) {
             return true
         }
 
-        // Block reflection to prevent sandbox escape
+        // Block reflection to prevent sandbox escape (unless plugin is trusted)
         if (name.startsWith("java.lang.reflect.")) {
-            return true
+            if (!bypassReflection) {
+                return true
+            }
         }
 
         // Block method handles but ALLOW LambdaMetafactory and StringConcatFactory required for Java 8+ lambdas

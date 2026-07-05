@@ -55,6 +55,39 @@ fun DesktopAppShell(
     val showBrowserPrompt by PlaywrightManager.showPrompt.collectAsState()
     val isBrowserDownloading by PlaywrightManager.isDownloading.collectAsState()
 
+    if (showBrowserPrompt) {
+        AlertDialog(
+            onDismissRequest = { PlaywrightManager.dismissPrompt() },
+            title = { Text("Playwright Browser Required") },
+            text = {
+                Column {
+                    Text("This site requires a browser-based Cloudflare bypass. Playwright needs a Chromium-based browser to continue.")
+                    Spacer(Modifier.height(8.dp))
+                    if (isBrowserDownloading) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(4.dp))
+                        Text("Downloading Playwright browser...", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                if (!isBrowserDownloading) {
+                    Button(onClick = {
+                        scope.launch {
+                            PlaywrightManager.downloadBrowser()
+                        }
+                    }) {
+                        Text("Download Browser")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { PlaywrightManager.dismissPrompt() }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 
     val hasUnreadUpdates by DesktopDataStore.pluginUpdatesFlow
         .map { DesktopDataStore.hasUnreadUpdates() }
@@ -187,6 +220,7 @@ private fun NavigationDock(
                     badge = savedRepos.size.takeIf { it > 0 }?.toString(),
                     onClick = { onNavigate(Screen.Extensions) },
                 )
+                DockItem(icon = Icons.Default.LiveTv, label = "IPTV", selected = current is Screen.IPTV, onClick = { onNavigate(Screen.IPTV) })
                 DockItem(icon = Icons.Default.Settings, label = "Settings", selected = current is Screen.Settings, onClick = { onNavigate(Screen.Settings) })
             }
 

@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream3.desktop.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -10,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -62,14 +64,19 @@ fun ExtensionCard(
                 )
             } else {
                 Box(
-                    modifier = Modifier.size(56.dp).padding(end = 16.dp),
+                    modifier = Modifier
+                        .size(56.dp)
+                        .padding(end = 16.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(8.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         Icons.Default.Extension,
                         contentDescription = null,
                         modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

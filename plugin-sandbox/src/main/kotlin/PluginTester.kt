@@ -107,14 +107,14 @@ fun main(args: Array<String>) {
         mapper.registerModule(fallbackModule)
 
         // Initialize WebViewResolver
-        com.lagradost.cloudstream3.network.WebViewResolver.webViewHandler = { request, callback ->
+        com.lagradost.cloudstream3.network.WebViewResolver.webViewHandler = { request: okhttp3.Request, callback: (okhttp3.Request) -> Boolean ->
             com.lagradost.cloudstream3.desktop.network.PlaywrightResolverImpl.resolve(request, callback)
         }
 
         try {
             // --- 2. Load Plugin Safely (Using ExtensionLoader to trigger StaticVerifier) ---
             println("Loading and Verifying Plugin via ExtensionLoader...")
-            val pluginClassName = com.lagradost.runtime.loader.ExtensionLoader.loadAndInit(jarFile)
+            val pluginClassName = com.lagradost.runtime.loader.ExtensionLoader.loadAndInit(pluginFile)
 
             if (pluginClassName != null) {
                 finalReport.append("Found and Verified plugin class: $pluginClassName\n")

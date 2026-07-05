@@ -38,6 +38,9 @@ class ExtensionsViewModel(private val coroutineScope: CoroutineScope) {
     private val _pluginRequiringBypass = MutableStateFlow<Pair<String, SitePlugin>?>(null)
     val pluginRequiringBypass = _pluginRequiringBypass.asStateFlow()
 
+    private val _localPluginRequiringBypass = MutableStateFlow<File?>(null)
+    val localPluginRequiringBypass = _localPluginRequiringBypass.asStateFlow()
+
     fun fetchPlugins() {
         _isFetching.value = true
         _statusText.value = "Fetching plugins from repositories..."
@@ -93,6 +96,25 @@ class ExtensionsViewModel(private val coroutineScope: CoroutineScope) {
         _installedPlugins.value = list
     }
 
+    fun reloadPlugin(plugin: LocalPlugin, onResult: (Result<Unit>) -> Unit) {
+        coroutineScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    ExtensionLoader.unloadPlugin(plugin.file.absolutePath)
+                    ExtensionLoader.loadAndInit(plugin.file)
+                }.map { Unit }
+            }
+            result.exceptionOrNull()?.let {
+                com.lagradost.common.logging.AppLogger.e("Failed to reload ${plugin.name}", it)
+            }
+            if (result.isSuccess) {
+                refreshInstalled()
+                DesktopRepositoryManager.syncGeneration.value += 1
+            }
+            onResult(result)
+        }
+    }
+
     fun installPlugin(repoName: String, plugin: SitePlugin, onResult: (String) -> Unit) {
         coroutineScope.launch {
             try {
@@ -102,7 +124,14 @@ class ExtensionsViewModel(private val coroutineScope: CoroutineScope) {
                 if (jarFile != null) {
                     withContext(Dispatchers.IO) {
                         ExtensionLoader.unloadPlugin(jarFile.absolutePath)
-                        ExtensionLoader.loadAndInit(jarFile)
+                        val plugin = ExtensionLoader.loadAndInit(jarFile)
+                        // Scan settings
+                        try {
+                            com.lagradost.cloudstream3.desktop.utils.PluginSettingsScanner.scanJarForSettings(
+                                plugin.filename ?: jarFile.nameWithoutExtension,
+                                jarFile
+                            )
+                        } catch (_: Throwable) {}
                     }
                     onResult("Installed")
                     refreshInstalled()
@@ -170,13 +199,39 @@ class ExtensionsViewModel(private val coroutineScope: CoroutineScope) {
             val targetDir = File(DesktopRepositoryManager.getExtensionsDir(), "Local_Sandbox")
             targetDir.mkdirs()
             val targetFile = File(targetDir, file.name)
-            file.copyTo(targetFile, overwrite = true)
             try {
+                file.copyTo(targetFile, overwrite = true)
                 ExtensionLoader.loadAndInit(targetFile)
+            } catch (e: java.lang.SecurityException) {
+                com.lagradost.common.logging.AppLogger.e("Security sandbox blocked local plugin: ${file.name}", e)
+                _localPluginRequiringBypass.value = targetFile
             } catch (e: Exception) {
-                com.lagradost.common.logging.AppLogger.e("Error loading local plugin", e)
+                com.lagradost.common.logging.AppLogger.e("Error loading local plugin: ${file.name}", e)
+                targetFile.delete()
             }
             refreshInstalled()
+        }
+    }
+
+    fun bypassSecurityAndLoadLocalPlugin() {
+        val pendingFile = _localPluginRequiringBypass.value ?: return
+        _localPluginRequiringBypass.value = null
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                ExtensionLoader.loadAndInit(pendingFile, forceBypassSecurity = true)
+            } catch (e: Exception) {
+                com.lagradost.common.logging.AppLogger.e("Error loading local plugin with bypass: ${pendingFile.name}", e)
+                pendingFile.delete()
+            }
+            refreshInstalled()
+        }
+    }
+
+    fun dismissLocalPluginBypass() {
+        val pendingFile = _localPluginRequiringBypass.value
+        _localPluginRequiringBypass.value = null
+        coroutineScope.launch(Dispatchers.IO) {
+            pendingFile?.delete()
         }
     }
 }

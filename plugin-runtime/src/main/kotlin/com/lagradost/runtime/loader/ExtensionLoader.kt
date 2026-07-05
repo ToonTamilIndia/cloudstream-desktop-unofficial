@@ -49,6 +49,15 @@ object ExtensionLoader {
             throw IllegalArgumentException("Jar file does not exist: ${jarFile.absolutePath}")
         }
 
+        // Some Android plugins capture CommonActivity.activity in their constructor.
+        // It must exist before the plugin class is instantiated, not only before load().
+        try {
+            com.lagradost.cloudstream3.CommonActivity.activity =
+                DesktopContextProvider.context as android.app.Activity
+        } catch (t: Throwable) {
+            AppLogger.w("Could not initialize desktop activity bridge: ${t.message}")
+        }
+
         var pluginClassName = fallbackPluginClassName
         var internalNameFromManifest: String? = null
         var nameFromManifest: String? = null
@@ -103,7 +112,9 @@ object ExtensionLoader {
 
         AppLogger.i("Loading plugin class: $pluginClassName from ${jarToLoad.absolutePath}")
 
-        if (!forceBypassSecurity && !isTrusted(jarToLoad)) {
+        val isReflectionTrusted = forceBypassSecurity || isTrusted(jarToLoad)
+
+        if (!isReflectionTrusted) {
             AppLogger.i("Running static bytecode security verification on ${jarToLoad.name}...")
             com.lagradost.runtime.security.PluginSecurityVerifier.verifyJar(jarToLoad)
         } else {
@@ -118,7 +129,7 @@ object ExtensionLoader {
             AppLogger.i("Intercepted plugin $pluginClassName! Injecting native JVM implementation.")
             nativeIntercept
         } else {
-            val safeParentLoader = SafePluginClassLoader(this::class.java.classLoader)
+            val safeParentLoader = SafePluginClassLoader(this::class.java.classLoader, isReflectionTrusted)
             val classLoader = URLClassLoader(arrayOf(jarToLoad.toURI().toURL()), safeParentLoader)
             val pluginClass = classLoader.loadClass(pluginClassName)
 
@@ -278,4 +289,3 @@ abstract class VerifiedRepoMixIn {
         @com.fasterxml.jackson.annotation.JsonProperty("verified") verified: Boolean?
     )
 }
-

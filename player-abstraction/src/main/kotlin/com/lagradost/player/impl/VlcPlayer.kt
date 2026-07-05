@@ -43,6 +43,14 @@ class VlcPlayer : MediaPlayer {
             try {
                 _state.update { it.copy(isLoading = true, error = null) }
 
+                PlayerLinkHandler.playbackSupport(link, PlayerLinkHandler.PlayerBackend.VLC).let { support ->
+                    if (!support.supported) {
+                        val error = IllegalArgumentException(support.reason ?: "VLC does not support this stream.")
+                        _state.update { it.copy(isLoading = false, error = error.message) }
+                        return@withContext Result.failure(error)
+                    }
+                }
+
                 val validated = PlayerLinkHandler.validate(link, title).getOrElse {
                     _state.update { state -> state.copy(isLoading = false, error = it.message) }
                     return@withContext Result.failure(it)
@@ -58,20 +66,28 @@ class VlcPlayer : MediaPlayer {
 
                 val args = mutableListOf(vlcExecutable)
 
-                val userAgent = validated.headers.entries.firstOrNull { it.key.equals("user-agent", true) }?.value
-                if (!userAgent.isNullOrBlank()) {
-                    args.add("--http-user-agent=$userAgent")
-                }
-
-                val referer = validated.headers.entries.firstOrNull {
-                    it.key.equals("referer", true) || it.key.equals("referrer", true)
-                }?.value
-                if (!referer.isNullOrBlank()) {
-                    args.add("--http-referrer=$referer")
+                validated.headers.forEach { (key, value) ->
+                    when {
+                        key.equals("user-agent", ignoreCase = true) -> {
+                            args.add("--http-user-agent=$value")
+                        }
+                        key.equals("referer", ignoreCase = true) || key.equals("referrer", ignoreCase = true) -> {
+                            args.add("--http-referrer=$value")
+                        }
+                        else -> {
+                            // Stock VLC only exposes User-Agent and Referrer CLI headers.
+                            // Keep direct mode direct; users can explicitly select Local Proxy
+                            // when Cookie/Authorization/Origin must be applied recursively.
+                            AppLogger.w("VLC direct mode cannot pass HTTP header '$key'; use Local Proxy for this stream.")
+                        }
+                    }
                 }
 
                 subtitles.filter { it.isNotBlank() }.forEach { sub ->
-                    args.add("--sub-file=$sub")
+                    val subtitleFile = prepareSubtitle(sub, validated.headers)
+                    if (subtitleFile != null) {
+                        args.add("--sub-file=${subtitleFile.absolutePath}")
+                    }
                 }
 
                 if (startSec > 0) {
@@ -193,14 +209,49 @@ class VlcPlayer : MediaPlayer {
                 probeCommand("which", "vlc")?.let {
                     if (File(it).exists()) return it
                 }
+                probeCommand("command", "-v", "vlc")?.let {
+                    if (File(it).exists()) return it
+                }
                 listOf(
                     "/Applications/VLC.app/Contents/MacOS/VLC",
                     "/usr/local/bin/vlc",
                     "/opt/homebrew/bin/vlc",
+                    "/usr/bin/vlc",
+                    "/snap/bin/vlc",
+                    "/var/lib/flatpak/exports/bin/org.videolan.VLC",
                 ).forEach { if (File(it).exists()) return it }
             }
         } catch (_: Exception) {
         }
         return null
+    }
+
+    /** VLC treats remote --sub-file values as local paths, so materialize them first. */
+    private fun prepareSubtitle(urlOrPath: String, headers: Map<String, String>): File? {
+        if (!urlOrPath.startsWith("http://", true) && !urlOrPath.startsWith("https://", true)) {
+            return File(urlOrPath).takeIf { it.isFile }
+        }
+        return try {
+            val request = okhttp3.Request.Builder().url(urlOrPath).apply {
+                headers.forEach { (key, value) -> header(key, value) }
+            }.build()
+            com.lagradost.cloudstream3.app.baseClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    AppLogger.w("VLC subtitle download failed (${response.code}): $urlOrPath")
+                    return null
+                }
+                val path = runCatching { java.net.URI(urlOrPath).path }.getOrNull().orEmpty()
+                val suffix = path.substringAfterLast('.', "srt")
+                    .takeIf { it.matches(Regex("[A-Za-z0-9]{1,5}")) }
+                    ?.let { ".$it" } ?: ".srt"
+                File.createTempFile("cloudstream_vlc_sub_", suffix).apply {
+                    deleteOnExit()
+                    writeBytes(response.body.bytes())
+                }
+            }
+        } catch (t: Throwable) {
+            AppLogger.w("Could not prepare VLC subtitle $urlOrPath: ${t.message}")
+            null
+        }
     }
 }

@@ -56,9 +56,9 @@ fun ComposeDetailsScreen(navController: NavController, provider: MainAPI, url: S
                     if (fakeData != null) {
                         DetailsContent(navController, provider, fakeData!!, enrichmentTrigger, isLoading = true, onPlay = viewModel::openLinksPanel)
                     } else {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
-                        }
+                        com.lagradost.cloudstream3.desktop.ui.components.PageLoadingIndicator(
+                            statusText = "Loading details...",
+                        )
                     }
                 } else if (response != null) {
                     DetailsContent(navController, provider, response!!, enrichmentTrigger, isLoading = false, onPlay = viewModel::openLinksPanel)
@@ -199,9 +199,10 @@ fun DetailsContent(navController: NavController, provider: MainAPI, data: LoadRe
 
             if (isLoading) {
                 item {
-                    Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
+                    com.lagradost.cloudstream3.desktop.ui.components.InlineSectionLoader(
+                        statusText = "Fetching episodes...",
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             } else {
                 item {

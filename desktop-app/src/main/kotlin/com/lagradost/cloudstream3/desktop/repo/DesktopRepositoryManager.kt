@@ -71,6 +71,21 @@ object DesktopRepositoryManager {
 
     init {
         refreshSavedRepositoriesFromDisk()
+        // Seed default CS3 repository if none configured
+        if (_savedRepositories.value.isEmpty()) {
+            saveRepository(
+                RepositoryData(
+                    name = "CloudStream 3 Repo",
+                    url = "https://cs3-repo.vercel.app/repo.json",
+                ),
+            )
+            saveRepository(
+                RepositoryData(
+                    name = "CloudStream 3 Repo (Mirror)",
+                    url = "https://cs3-repo.onrender.com/repo.json",
+                ),
+            )
+        }
     }
 
     fun getSavedRepositories(): List<RepositoryData> = _savedRepositories.value

@@ -42,66 +42,7 @@ object GlobalDetailsCache {
 
     suspend fun enrich(loaded: LoadResponse, url: String) {
         withContext(Dispatchers.IO) {
-            try {
-                val tmdb = object : com.lagradost.cloudstream3.metaproviders.TmdbProvider() {
-                    override val useMetaLoadResponse = true
-                }
-                val cleanName = loaded.name
-                    .replace(Regex("""\s*\(\d{4}\).*"""), "")
-                    .replace(Regex("""\s*(?i)(dual audio|720p|1080p|480p|2160p|webrip|web-dl|hdtv|bluray).*"""), "")
-                    .replace(Regex("""\s*[\[\{].*"""), "")
-                    .trim()
-
-                val searchResults = tmdb.search(cleanName, 1)?.items ?: emptyList()
-                val strippedCleanName = cleanName.replace(Regex("[^a-zA-Z0-9]"), "")
-
-                val match = searchResults.firstOrNull { result ->
-                    val resultYear = when (result) {
-                        is MovieSearchResponse -> result.year
-                        is TvSeriesSearchResponse -> result.year
-                        else -> null
-                    }
-                    val strippedResultName = result.name.replace(Regex("[^a-zA-Z0-9]"), "")
-
-                    if (strippedResultName.equals(strippedCleanName, ignoreCase = true) && strippedCleanName.isNotEmpty()) {
-                        if (result is MovieSearchResponse && resultYear != null && loaded.year != null && resultYear != loaded.year) {
-                            false // Year conflicts for Movie
-                        } else {
-                            true // Name matches and either it's not a movie or year doesn't conflict
-                        }
-                    } else {
-                        false
-                    }
-                }
-
-                if (match != null) {
-                    val enriched = tmdb.load(match.url)
-                    if (enriched != null) {
-                        if (!enriched.backgroundPosterUrl.isNullOrBlank()) {
-                            loaded.backgroundPosterUrl = enriched.backgroundPosterUrl?.replace("/w500/", "/original/")
-                        } else if (!enriched.posterUrl.isNullOrBlank() && loaded.backgroundPosterUrl.isNullOrBlank()) {
-                            loaded.backgroundPosterUrl = enriched.posterUrl?.replace("/w500/", "/original/")
-                        }
-
-                        if (!enriched.posterUrl.isNullOrBlank()) {
-                            loaded.posterUrl = enriched.posterUrl
-                        }
-
-                        if (loaded.actors.isNullOrEmpty() || loaded.actors!!.all { it.actor.image == null }) {
-                            if (!enriched.actors.isNullOrEmpty()) {
-                                loaded.actors = enriched.actors
-                            }
-                        }
-
-                        if (loaded.plot.isNullOrBlank()) loaded.plot = enriched.plot
-                        if (loaded.tags.isNullOrEmpty()) loaded.tags = enriched.tags
-                        if (loaded.duration == null || loaded.duration == 0) loaded.duration = enriched.duration
-                        if (loaded.score == null) loaded.score = enriched.score
-                    }
-                }
-            } catch (t: Throwable) {
-                com.lagradost.common.logging.AppLogger.e("Error enriching TMDB data", t)
-            }
+            TitleMetadataEnricher.enrich(loaded)
         }
         cache[url] = loaded
     }

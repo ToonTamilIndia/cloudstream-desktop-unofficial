@@ -62,11 +62,34 @@ object PlaywrightManager {
             edgePaths.add(File("/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"))
             chromePaths.add(File("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"))
         } else {
-            // Linux
+            // Linux — use `which` for PATH-based detection, plus common snapshot/flatpak paths
+            val searchCommands = listOf("microsoft-edge-stable", "microsoft-edge", "google-chrome-stable", "google-chrome", "chromium-browser", "chromium")
+            for (cmd in searchCommands) {
+                val path = try {
+                    Runtime.getRuntime().exec(arrayOf("which", cmd)).inputStream.bufferedReader().readText().trim()
+                } catch (_: Exception) { "" }
+                if (path.isNotEmpty()) {
+                    val f = File(path)
+                    if (f.exists()) {
+                        if (cmd.startsWith("microsoft-edge")) edgePaths.add(f)
+                        else chromePaths.add(f)
+                    }
+                }
+            }
+            // Also check common hardcoded paths
             edgePaths.add(File("/usr/bin/microsoft-edge-stable"))
             edgePaths.add(File("/usr/bin/microsoft-edge"))
             chromePaths.add(File("/usr/bin/google-chrome-stable"))
             chromePaths.add(File("/usr/bin/google-chrome"))
+            chromePaths.add(File("/usr/bin/chromium-browser"))
+            chromePaths.add(File("/usr/bin/chromium"))
+            // Snap packages
+            chromePaths.add(File("/snap/bin/chromium"))
+            chromePaths.add(File("/snap/bin/google-chrome-stable"))
+            // Flatpak
+            chromePaths.add(File("/var/lib/flatpak/exports/bin/com.google.Chrome"))
+            chromePaths.add(File("/var/lib/flatpak/exports/bin/com.microsoft.Edge"))
+            edgePaths.add(File("/var/lib/flatpak/exports/bin/com.microsoft.Edge"))
         }
 
         when {

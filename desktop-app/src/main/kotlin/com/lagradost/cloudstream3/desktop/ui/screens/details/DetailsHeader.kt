@@ -241,12 +241,26 @@ fun DetailsMetadata(provider: MainAPI, data: LoadResponse, hazeState: HazeState)
                 ) {
                     items(data.actors!!) { actor ->
                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(110.dp)) {
-                            AsyncImage(
-                                model = provider.fixUrlNull(actor.actor.image),
-                                contentDescription = actor.actor.name,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(96.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
-                            )
+                            Box(
+                                modifier = Modifier.size(96.dp).clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    actor.actor.name.split(' ').mapNotNull { it.firstOrNull() }.take(2).joinToString("").uppercase(),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                                provider.fixUrlNull(actor.actor.image)?.let { image ->
+                                    AsyncImage(
+                                        model = image,
+                                        contentDescription = actor.actor.name,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                            }
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(actor.actor.name, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
                             actor.roleString?.let {
@@ -265,4 +279,3 @@ fun DetailsMetadata(provider: MainAPI, data: LoadResponse, hazeState: HazeState)
         }
     }
 }
-

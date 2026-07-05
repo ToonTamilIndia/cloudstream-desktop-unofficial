@@ -11,9 +11,20 @@ import java.io.File
  */
 object PlayerLinkHandler {
 
+    enum class PlayerBackend { MPV, VLC, KODI }
+
+    data class PlaybackSupport(val supported: Boolean, val reason: String? = null)
+
     const val MIN_DURATION_TO_SAVE_SECONDS = 30L
     const val RESUME_RESET_PERCENT = 95L
     const val RESUME_MIN_PERCENT = 1L
+
+    data class DrmInfo(
+        val kid: String?,
+        val key: String?,
+        val uuid: String?,
+        val licenseUrl: String?,
+    )
 
     data class ValidatedLink(
         val url: String,
@@ -23,6 +34,7 @@ object PlayerLinkHandler {
         val useUrlFile: Boolean,
         val audioTracks: List<com.lagradost.cloudstream3.AudioFile> = emptyList(),
         val proxySessionId: String? = null,
+        val drmInfo: DrmInfo? = null,
     )
 
     enum class StreamKind {
@@ -31,7 +43,24 @@ object PlayerLinkHandler {
         PROGRESSIVE,
     }
 
-    fun validate(link: ExtractorLink, explicitTitle: String? = null): Result<ValidatedLink> {
+    fun validate(
+        link: ExtractorLink,
+        explicitTitle: String? = null,
+        useLocalProxy: Boolean = false,
+    ): Result<ValidatedLink> {
+        // Check for DRM (ClearKey/Widevine) - only ClearKey is playable on desktop
+        val drmInfo = if (link is com.lagradost.cloudstream3.utils.DrmExtractorLink) {
+            @OptIn(kotlin.uuid.ExperimentalUuidApi::class)
+            DrmInfo(
+                kid = link.kid,
+                key = link.key,
+                uuid = link.uuid.toString(),
+                licenseUrl = link.licenseUrl,
+            )
+        } else {
+            null
+        }
+
         // --- Handle ExtractorLinkPlayList (concatenated chunk streams) ---
         // These have url="" but provide a list of chunk URLs + durations.
         // We generate an MPV EDL (Edit Decision List) file to play them seamlessly.
@@ -49,6 +78,7 @@ object PlayerLinkHandler {
                     headers = headers,
                     streamKind = StreamKind.PROGRESSIVE,
                     useUrlFile = false,
+                    drmInfo = drmInfo,
                 ),
             )
         }
@@ -78,10 +108,20 @@ object PlayerLinkHandler {
         // This makes the stream appear as a seamless local HLS feed to MPV.
         // Without this, MPV receives raw tokenized CDN segment URLs which can expire
         // mid-stream, causing broken-pieces playback.
-        val useProxy = kind == StreamKind.HLS
+        // HLS and DASH manifests contain recursive child requests. Proxy them whenever
+        // headers must be inherited by playlists, keys, init segments, and media segments.
+        val useProxy = useLocalProxy &&
+            (kind == StreamKind.HLS || (kind == StreamKind.DASH && headers.isNotEmpty()))
         var finalSessionId: String? = null
         val finalUrl = if (useProxy) {
-            val sessionId = com.lagradost.player.impl.proxy.LocalStreamProxy.registerSession(headers)
+            val drmKeyBytes = drmInfo?.key?.let { keyB64 ->
+                try {
+                    java.util.Base64.getDecoder().decode(keyB64.trim())
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            val sessionId = com.lagradost.player.impl.proxy.LocalStreamProxy.registerSession(headers, drmKeyBytes)
             finalSessionId = sessionId
             com.lagradost.player.impl.proxy.LocalStreamProxy.buildProxyUrl(sessionId, url)
         } else {
@@ -122,6 +162,7 @@ object PlayerLinkHandler {
                 useUrlFile = !useProxy && (finalUrl.length > 1800 || finalUrl.count { it == '&' } > 8),
                 audioTracks = finalAudioTracks,
                 proxySessionId = finalSessionId,
+                drmInfo = drmInfo,
             ),
         )
     }
@@ -142,6 +183,28 @@ object PlayerLinkHandler {
             merged["User-Agent"] = com.lagradost.cloudstream3.USER_AGENT
         }
         return merged
+    }
+
+    /** Capability gate shared by the UI and player implementations. */
+    fun playbackSupport(link: ExtractorLink, backend: PlayerBackend): PlaybackSupport {
+        val drmHeader = link.getAllHeaders().keys.any { it.equals("x-drm", ignoreCase = true) }
+        val drm = link as? com.lagradost.cloudstream3.utils.DrmExtractorLink
+        val hasLicenseDrm = drmHeader || !drm?.licenseUrl.isNullOrBlank()
+        val hasClearKey = drm?.kid?.isNotBlank() == true && drm.key?.isNotBlank() == true
+
+        if (hasLicenseDrm) {
+            return PlaybackSupport(
+                false,
+                "This stream uses license-server DRM. $backend cannot play it through the desktop app; use a legally configured DRM-capable browser or Kodi inputstream.adaptive integration.",
+            )
+        }
+        if (drm != null && !hasClearKey) {
+            return PlaybackSupport(false, "This stream contains unsupported or incomplete DRM metadata.")
+        }
+        if (hasClearKey && backend != PlayerBackend.MPV) {
+            return PlaybackSupport(false, "ClearKey streams are only supported by the embedded MPV backend.")
+        }
+        return PlaybackSupport(true)
     }
 
     fun sanitizeDisplayTitle(raw: String): String {
@@ -338,18 +401,6 @@ object PlayerLinkHandler {
         return headers.entries.joinToString(separator = "\r\n") { (k, v) ->
             "$k: ${v.replace("\r", "").replace("\n", "")}"
         }
-    }
-
-    fun shouldPreferMpv(link: ExtractorLink): Boolean {
-        val headers = buildHeaderMap(link)
-        val hasExtraHeaders = headers.keys.any { key ->
-            !key.equals("user-agent", ignoreCase = true) &&
-                !key.equals("referer", ignoreCase = true) &&
-                !key.equals("referrer", ignoreCase = true)
-        }
-        // We no longer arbitrarily force MPV for all HLS/DASH links.
-        // VLC is often better at handling malformed server playlists.
-        return link.url.length > 1800 || hasExtraHeaders
     }
 
     private fun escapeMpvValue(value: String): String {

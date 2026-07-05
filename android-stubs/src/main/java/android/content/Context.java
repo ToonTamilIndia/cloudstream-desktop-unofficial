@@ -74,6 +74,15 @@ public class Context {
         return DEFAULT_PACKAGE_NAME;
     }
 
+    public String getString(int resId) {
+        return "res_" + resId;
+    }
+
+    public String getString(int resId, Object... formatArgs) {
+        String format = getString(resId);
+        return String.format(java.util.Locale.US, format, formatArgs);
+    }
+
     public Object getSystemService(String name) {
         return null;
     }

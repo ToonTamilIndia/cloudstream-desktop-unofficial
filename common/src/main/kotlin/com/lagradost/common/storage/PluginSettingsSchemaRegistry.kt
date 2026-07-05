@@ -15,6 +15,10 @@ object PluginSettingsSchemaRegistry {
     // Map of pluginPrefName (e.g. "CineStream_") to a map of keys and their schemas
     val schemas = ConcurrentHashMap<String, ConcurrentHashMap<String, PluginSettingSchema>>()
 
+    // Store mapping from SharedPreferences names to plugin internalNames
+    // Key: SharedPreferences name (e.g. "Cricify"), Value: plugin internalName (e.g. "CricifyProvider")
+    val sharedPrefNameMapping = ConcurrentHashMap<String, MutableSet<String>>()
+
     // Observable flow to trigger UI updates when new settings are detected
     val schemaUpdates = MutableStateFlow(0)
 
@@ -36,5 +40,60 @@ object PluginSettingsSchemaRegistry {
 
     fun hasSettings(pluginPrefName: String): Boolean {
         return schemas.containsKey(pluginPrefName) && schemas[pluginPrefName]!!.isNotEmpty()
+    }
+
+    /**
+     * Find the correct pluginPrefName for a plugin by checking multiple candidates.
+     * SharedPreferences-based plugins register with the SharedPreferences name (e.g. "Cricify_")
+     * while the installed tab uses internalName (e.g. "CricifyProvider_"). This function
+     * bridges that gap by checking all registered pref names against the plugin identity.
+     */
+    fun findPrefNameForPlugin(internalName: String, jarNameWithoutExt: String): String? {
+        val candidates = mutableSetOf(
+            "${internalName}_",
+            "${jarNameWithoutExt}_",
+        )
+
+        // Also check known SharedPreferences name mappings
+        for ((spName, pluginSet) in sharedPrefNameMapping) {
+            if (internalName in pluginSet || jarNameWithoutExt in pluginSet) {
+                candidates.add("${spName}_")
+            }
+        }
+
+        // For each candidate, check if we have settings
+        for (candidate in candidates) {
+            if (hasSettings(candidate)) return candidate
+        }
+
+        // Broader search: iterate all registered prefNames and see if any
+        // shares a common prefix with the plugin identity
+        val searchTokens = setOf(internalName, jarNameWithoutExt)
+        for (registeredPrefName in schemas.keys) {
+            val cleanName = registeredPrefName.removeSuffix("_")
+            if (searchTokens.any { token ->
+                cleanName.contains(token, ignoreCase = true) || token.contains(cleanName, ignoreCase = true)
+            }) {
+                return registeredPrefName
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Record a mapping between a SharedPreferences name and a plugin identifier.
+     * This bridges the gap between SharedPreferences-based settings and the internalName-based settings UI.
+     */
+    fun recordSharedPrefMapping(prefName: String, pluginIdentifier: String) {
+        sharedPrefNameMapping.getOrPut(prefName) { ConcurrentHashMap.newKeySet() }.add(pluginIdentifier)
+    }
+
+    /**
+     * Remove all settings for a given pluginPrefName
+     */
+    fun removePlugin(prefName: String) {
+        schemas.remove(prefName)
+        schemaUpdates.value++
     }
 }

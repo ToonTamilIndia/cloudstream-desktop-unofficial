@@ -63,8 +63,15 @@ private fun loadInstalledPlugins() {
     var failed = 0
     for (jarFile in jarFiles) {
         try {
-            ExtensionLoader.loadAndInit(jarFile)
+            val plugin = ExtensionLoader.loadAndInit(jarFile)
             loaded++
+            // Scan JAR for plugin settings keys so they appear in the settings UI
+            try {
+                com.lagradost.cloudstream3.desktop.utils.PluginSettingsScanner.scanJarForSettings(
+                    plugin.filename ?: jarFile.nameWithoutExtension,
+                    jarFile
+                )
+            } catch (_: Throwable) {}
         } catch (e: Throwable) {
             failed++
             AppLogger.e("Failed to load plugin ${jarFile.name}: ${e.message}")

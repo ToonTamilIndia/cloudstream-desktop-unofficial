@@ -117,13 +117,15 @@ class HomeViewModel(private val coroutineScope: CoroutineScope) {
 
     private fun updateProviders() {
         val currentProviders = APIHolder.allProviders.filter { it.isRealProvider() }
-        if (currentProviders.size != providers.value.size) {
-            providers.value = currentProviders
-            if (selectedProviderName.value == null && currentProviders.isNotEmpty()) {
-                val restored = currentProviders.firstOrNull { it.name == DesktopDataStore.getKey<String>(PREF_SELECTED_PROVIDER) }
-                if (restored != null) {
-                    selectedProviderName.value = restored.name
-                }
+        // A plugin reload can replace providers without changing the list size.
+        providers.value = currentProviders
+        if (selectedProviderName.value != null && currentProviders.none { it.name == selectedProviderName.value }) {
+            selectedProviderName.value = null
+        }
+        if (selectedProviderName.value == null && currentProviders.isNotEmpty()) {
+            val restored = currentProviders.firstOrNull { it.name == DesktopDataStore.getKey<String>(PREF_SELECTED_PROVIDER) }
+            if (restored != null) {
+                selectedProviderName.value = restored.name
             }
         }
     }

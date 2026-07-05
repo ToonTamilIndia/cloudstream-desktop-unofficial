@@ -85,28 +85,39 @@ dependencies {
     implementation(libs.logback.classic)
 }
 
-// Strip Playwright driver-bundle to Windows-only before packaging
+// Strip Playwright driver-bundle to current-platform-only before packaging.
 // The driver-bundle JAR ships Node.js for ALL platforms (Win/Mac/Linux).
-// Since this is a Windows-only build, we strip out Mac and Linux entries
-// to reduce the JAR from ~206MB down to ~50MB.
+// We strip out entries for OTHER platforms to reduce the JAR from ~206MB down to ~50MB.
 val stripPlaywrightDriver by tasks.registering {
-    description = "Strips non-Windows platform binaries from the Playwright driver-bundle JAR."
+    description = "Strips non-native platform binaries from the Playwright driver-bundle JAR."
     group = "build"
 
     doLast {
+        val osName = System.getProperty("os.name").lowercase()
+        val platformsToStrip = mutableListOf<String>()
+        when {
+            osName.contains("win") -> {
+                platformsToStrip.addAll(listOf("driver/mac", "driver/mac-arm64", "driver/linux", "driver/linux-arm64"))
+            }
+            osName.contains("mac") -> {
+                platformsToStrip.addAll(listOf("driver/linux", "driver/linux-arm64", "driver/win32", "driver/win32-x64"))
+            }
+            else -> { // Linux
+                platformsToStrip.addAll(listOf("driver/mac", "driver/mac-arm64", "driver/win32", "driver/win32-x64"))
+            }
+        }
+
         val driverJar = configurations.runtimeClasspath.get()
             .resolvedConfiguration.resolvedArtifacts
             .find { it.name == "driver-bundle" }?.file ?: return@doLast
 
-        val strippedJar = layout.buildDirectory.get().asFile.resolve("playwright-driver-win32.jar")
+        val strippedJar = layout.buildDirectory.get().asFile.resolve("playwright-driver-stripped.jar")
         if (strippedJar.exists() && strippedJar.lastModified() > driverJar.lastModified()) {
             println("Playwright driver already stripped, skipping.")
             return@doLast
         }
 
-        println("Stripping non-Windows entries from Playwright driver-bundle (${driverJar.length() / 1024 / 1024}MB)...")
-
-        val platformsToStrip = listOf("driver/mac", "driver/mac-arm64", "driver/linux", "driver/linux-arm64")
+        println("Stripping non-native entries from Playwright driver-bundle (${driverJar.length() / 1024 / 1024}MB)...")
 
         ZipFile(driverJar).use { input: ZipFile ->
             ZipOutputStream(strippedJar.outputStream().buffered()).use { output: ZipOutputStream ->
@@ -137,15 +148,23 @@ val stripPlaywrightDriver by tasks.registering {
 compose.desktop {
     application {
         mainClass = "com.lagradost.cloudstream3.desktop.MainKt"
-        jvmArgs += listOf("-Djava.security.manager=allow")
+        jvmArgs += listOf(
+            "-Djava.security.manager=allow",
+            // Force GTK2 for AWT to avoid libfreetype rendering crashes on some Linux distros
+            "-Djdk.gtk.version=2",
+        )
 
         buildTypes.release.proguard {
             isEnabled.set(false)
         }
 
         nativeDistributions {
-            // Windows only — no Mac or Linux targets
-            targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi)
+            targetFormats(
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb,
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Rpm,
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.AppImage,
+            )
             packageName = "CloudStream-Desktop"
             packageVersion = "0.1.0"
             description = "CloudStream Desktop Client"
@@ -160,12 +179,21 @@ compose.desktop {
                 shortcut = true       // Creates a Desktop shortcut during install
                 perUserInstall = true // Installs per-user, avoids needing admin rights
             }
+
+            linux {
+                iconFile.set(project.file("src/main/resources/logo_ui.png"))
+                packageName = "cloudstream-desktop"
+            }
+
+            macOS {
+                iconFile.set(project.file("src/main/resources/logo_ui.png"))
+            }
         }
     }
 
-    // Hook the strip task to run before any MSI packaging task
+    // Hook the strip task to run before any packaging task
     afterEvaluate {
-        listOf("packageMsi", "packageReleaseMsi", "createDistributable", "createReleaseDistributable")
+        listOf("packageMsi", "packageReleaseMsi", "packageDeb", "packageReleaseDeb", "packageRpm", "packageReleaseRpm", "packageAppImage", "packageReleaseAppImage", "createDistributable", "createReleaseDistributable")
             .mapNotNull { tasks.findByName(it) }
             .forEach { it.dependsOn(stripPlaywrightDriver) }
     }

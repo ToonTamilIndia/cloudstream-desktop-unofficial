@@ -1,0 +1,44 @@
+
+--- 📊 PLUGIN COMPATIBILITY REPORT 📊 ---
+
+✅ IMPLEMENTED CORE APIs (0) - Safe data logic:
+
+⚠️ STUBBED UI APIs (17) - Faked out to prevent crashes:
+   - android/content/ComponentName
+   - android/content/Context
+   - android/content/DialogInterface
+   - android/content/Intent
+   - android/content/SharedPreferences
+   - android/content/pm/PackageManager
+   - android/content/res/Resources
+   - android/graphics/drawable/Drawable
+   - android/os/Bundle
+   - android/view/View
+   - android/view/ViewGroup
+   - android/widget/CheckBox
+   - android/widget/CompoundButton
+   - android/widget/LinearLayout
+   - android/widget/TextView
+   - androidx/appcompat/app/AppCompatActivity
+   - androidx/fragment/app/FragmentManager
+
+❌ MISSING APIs DETECTED (14):
+   - android/content/DialogInterface$OnClickListener
+   - android/content/SharedPreferences$Editor
+   - android/content/res/Resources$Theme
+   - android/content/res/XmlResourceParser
+   - android/view/LayoutInflater
+   - android/view/View$OnClickListener
+   - android/view/ViewGroup$LayoutParams
+   - android/widget/CompoundButton$OnCheckedChangeListener
+   - android/widget/ImageButton
+   - android/widget/RelativeLayout
+   - android/widget/RelativeLayout$LayoutParams
+   - androidx/appcompat/app/AlertDialog
+   - androidx/appcompat/app/AlertDialog$Builder
+   - androidx/core/content/res/ResourcesCompat
+
+🚨 Please implement these in desktop-app/src/main/android_core or stub them in android_stubs.
+
+--- Deep Execution Testing ---
+Execution failed: java.lang.SecurityException: Security Sandbox: Potentially unsafe code detected in class com/horis/cncverse/CNCVerseSettings method restartApp. Illegal invocation: java/lang/Runtime.exit

@@ -42,6 +42,13 @@ fun main() {
     initProviders()
     initPlugins()
     launchAutoUpdater()
+    // Load Kodi config from saved settings
+    com.lagradost.player.impl.KodiConfig.run {
+        host = com.lagradost.common.storage.DesktopDataStore.getKey<String>("kodi_host") ?: host
+        port = com.lagradost.common.storage.DesktopDataStore.getKey<String>("kodi_port")?.toIntOrNull() ?: port
+        username = com.lagradost.common.storage.DesktopDataStore.getKey<String>("kodi_user") ?: username
+        password = com.lagradost.common.storage.DesktopDataStore.getKey<String>("kodi_pass") ?: password
+    }
 
     application {
         setSingletonImageLoaderFactory { context ->
@@ -84,8 +91,10 @@ fun main() {
             state = state,
             icon = androidx.compose.ui.res.painterResource("logo_ui.png"),
         ) {
+            val awtWindow = this.window
             androidx.compose.runtime.CompositionLocalProvider(
                 com.lagradost.cloudstream3.desktop.ui.LocalWindowState provides state,
+                com.lagradost.cloudstream3.desktop.ui.LocalAwtWindow provides awtWindow,
             ) {
                 CloudstreamApp()
             }

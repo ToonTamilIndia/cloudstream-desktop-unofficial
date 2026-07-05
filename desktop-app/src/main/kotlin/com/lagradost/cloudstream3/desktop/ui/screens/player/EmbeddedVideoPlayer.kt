@@ -102,6 +102,7 @@ fun EmbeddedVideoPlayer(
                             title = launchData.title,
                             subtitles = launchData.subtitles,
                             startPositionMs = launchData.startPositionMs,
+                            useLocalProxy = launchData.useLocalProxy,
                             onPlaybackReady = {
                                 isLoading = false
                             },
@@ -163,31 +164,14 @@ fun EmbeddedVideoPlayer(
                 }
             }
 
-            // --- Loading State ---
-            if (isLoading && errorMessage == null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(
-                            color = MaterialTheme.colorScheme.primary,
-                            strokeWidth = 4.dp,
-                            modifier = Modifier.size(48.dp),
-                        )
-                        if (autoPlay && launchData.links.size > 1) {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Trying link ${currentLinkIndex + 1} of ${launchData.links.size}...",
-                                color = MaterialTheme.colorScheme.onSurface,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                    }
-                }
-            }
+            // --- Loading State (CS3 center-bottom style) ---
+            com.lagradost.cloudstream3.desktop.ui.components.PlayerLoadingOverlay(
+                visible = isLoading && errorMessage == null,
+                statusText = "Buffering stream...",
+                tryingLinkText = if (autoPlay && launchData.links.size > 1) {
+                    "Trying link ${currentLinkIndex + 1} of ${launchData.links.size}"
+                } else null,
+            )
 
             // --- Error State ---
             if (errorMessage != null) {
@@ -253,4 +237,3 @@ fun EmbeddedVideoPlayer(
         }
     }
 }
-

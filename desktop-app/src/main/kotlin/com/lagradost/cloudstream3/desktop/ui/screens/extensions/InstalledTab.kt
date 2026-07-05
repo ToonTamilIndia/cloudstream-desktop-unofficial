@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.lagradost.cloudstream3.desktop.repo.DesktopRepositoryManager
 import com.lagradost.cloudstream3.desktop.ui.components.ExtensionCard
+import com.lagradost.cloudstream3.desktop.ui.components.FileDropHandler
 import com.lagradost.cloudstream3.desktop.ui.screens.PluginSettingsDialog
 import com.lagradost.cloudstream3.desktop.ui.theme.AppearanceConfig
 import com.lagradost.runtime.loader.ExtensionLoader
@@ -20,22 +21,30 @@ fun InstalledTab(viewModel: ExtensionsViewModel, syncGeneration: Int) {
     val installedPlugins by viewModel.installedPlugins.collectAsState()
     var selectedPlugins by remember { mutableStateOf(setOf<LocalPlugin>()) }
     val remoteIcons by DesktopRepositoryManager.remotePluginIcons.collectAsState()
+    val settingsGeneration by com.lagradost.common.storage.PluginSettingsSchemaRegistry.schemaUpdates.collectAsState()
 
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    var showUnsupportedWarning by remember { mutableStateOf(false) }
 
     LaunchedEffect(syncGeneration) {
         viewModel.refreshInstalled()
     }
 
-    if (showUnsupportedWarning) {
+    val localPluginBypass by viewModel.localPluginRequiringBypass.collectAsState()
+    if (localPluginBypass != null) {
         AlertDialog(
-            onDismissRequest = { showUnsupportedWarning = false },
-            title = { Text("Unsupported Feature") },
-            text = { Text("Custom Android settings UI (Layer 3) is not supported on Desktop.\n\nPlease go to Settings -> Plugins from the sidebar to configure this plugin.") },
+            onDismissRequest = { viewModel.dismissLocalPluginBypass() },
+            title = { Text("Security Sandbox Warning") },
+            text = {
+                Text("The plugin ${localPluginBypass!!.name} uses reflection (java.lang.reflect.Method.invoke) which is blocked by the security sandbox.\n\nBypass security and load it anyway? Only do this for plugins you trust.")
+            },
             confirmButton = {
-                TextButton(onClick = { showUnsupportedWarning = false }) {
-                    Text("OK")
+                Button(onClick = { viewModel.bypassSecurityAndLoadLocalPlugin() }) {
+                    Text("Bypass & Load")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissLocalPluginBypass() }) {
+                    Text("Cancel (Delete File)")
                 }
             },
         )
@@ -69,6 +78,16 @@ fun InstalledTab(viewModel: ExtensionsViewModel, syncGeneration: Int) {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        FileDropHandler(
+            enabled = true,
+            onFilesDropped = { files ->
+                val pluginFiles = files.filter { it.extension.lowercase() in listOf("jar", "cs3") }
+                if (pluginFiles.isNotEmpty()) {
+                    pluginFiles.forEach { viewModel.loadLocalPlugin(it) }
+                }
+            },
+        )
+
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -79,11 +98,17 @@ fun InstalledTab(viewModel: ExtensionsViewModel, syncGeneration: Int) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = {
-                        val dialog = java.awt.FileDialog(null as java.awt.Frame?, "Load Local Plugin (.cs3 / .jar)", java.awt.FileDialog.LOAD)
-                        dialog.file = "*.cs3;*.jar"
-                        dialog.isVisible = true
-                        if (dialog.file != null) {
-                            val sourceFile = java.io.File(dialog.directory, dialog.file)
+                        // Use Swing JFileChooser instead of AWT FileDialog to avoid GTK/libfreetype rendering bugs on Linux
+                        val chooser = javax.swing.JFileChooser()
+                        chooser.dialogTitle = "Load Local Plugin (.cs3 / .jar)"
+                        chooser.fileFilter = object : javax.swing.filechooser.FileFilter() {
+                            override fun accept(f: java.io.File): Boolean =
+                                f.isDirectory || f.name.lowercase().endsWith(".cs3") || f.name.lowercase().endsWith(".jar")
+                            override fun getDescription(): String = "CloudStream Plugins (*.cs3, *.jar)"
+                        }
+                        val result = chooser.showOpenDialog(null)
+                        if (result == javax.swing.JFileChooser.APPROVE_OPTION) {
+                            val sourceFile = chooser.selectedFile
                             viewModel.loadLocalPlugin(sourceFile)
                         }
                     },
@@ -127,7 +152,19 @@ fun InstalledTab(viewModel: ExtensionsViewModel, syncGeneration: Int) {
                 val instance = remember(plugin) {
                     ExtensionLoader.getPlugin(plugin.file.absolutePath) as? com.lagradost.cloudstream3.plugins.Plugin
                 }
-                val hasSchemaSettings = com.lagradost.common.storage.PluginSettingsSchemaRegistry.hasSettings(prefName)
+
+                // Find the correct prefName - plugins using SharedPreferences may register
+                // under a different name than internalName (e.g. "Cricify_" vs "CricifyProvider_")
+                val jarNameNoExt = plugin.file.nameWithoutExtension.removeSuffix("-jvm")
+                val resolvedPrefName = remember(plugin, settingsGeneration) {
+                    val registry = com.lagradost.common.storage.PluginSettingsSchemaRegistry
+                    if (registry.hasSettings(prefName)) {
+                        prefName
+                    } else {
+                        registry.findPrefNameForPlugin(plugin.internalName, jarNameNoExt) ?: prefName
+                    }
+                }
+                val hasSchemaSettings = com.lagradost.common.storage.PluginSettingsSchemaRegistry.hasSettings(resolvedPrefName)
                 val showSettings = instance?.openSettings != null || hasSchemaSettings
 
                 ExtensionCard(
@@ -155,8 +192,19 @@ fun InstalledTab(viewModel: ExtensionsViewModel, syncGeneration: Int) {
                     onSettingsClick = {
                         if (hasSchemaSettings) {
                             showDynamicSettings = true
+                        } else if (instance?.openSettings != null) {
+                            // Invoke the plugin's own settings handler with desktop context
+                            try {
+                                instance.openSettings?.invoke(android.content.DesktopContextProvider.context)
+                            } catch (t: Throwable) {
+                                com.lagradost.common.logging.AppLogger.e("Failed to invoke plugin settings", t)
+                                // Fall back to dynamic settings dialog even if no settings were auto-discovered
+                                showDynamicSettings = true
+                            }
                         } else {
-                            showUnsupportedWarning = true
+                            // No settings at all - still show the dynamic dialog so users can
+                            // create custom toggles for this plugin
+                            showDynamicSettings = true
                         }
                     }
                 )
@@ -164,7 +212,11 @@ fun InstalledTab(viewModel: ExtensionsViewModel, syncGeneration: Int) {
                 if (showDynamicSettings) {
                     PluginSettingsDialog(
                         pluginName = plugin.name,
-                        prefName = prefName,
+                        prefName = resolvedPrefName,
+                        onReload = {
+                            showDynamicSettings = false
+                            viewModel.reloadPlugin(plugin) { }
+                        },
                         onDismiss = { showDynamicSettings = false },
                     )
                 }

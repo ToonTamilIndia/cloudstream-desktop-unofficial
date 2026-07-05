@@ -9,6 +9,7 @@ import com.lagradost.cloudstream3.network.WebViewResolver
 import com.lagradost.common.logging.AppLogger
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.Request
 
 /**
  * Initializes all network-related subsystems:
@@ -76,8 +77,8 @@ fun initNetwork() {
     }
     mapper.registerModule(fallbackModule)
 
-    // Initialize WebViewResolver
-    WebViewResolver.webViewHandler = { request, callback ->
+    // Initialize WebViewResolver — delegate to Playwright (headless Chromium)
+    WebViewResolver.webViewHandler = { request: Request, callback: (Request) -> Boolean ->
         PlaywrightResolverImpl.resolve(request, callback)
     }
 
@@ -87,6 +88,28 @@ fun initNetwork() {
             WebViewResolver.webViewHandler?.invoke(
                 okhttp3.Request.Builder().url(url).build(),
             ) { true }
+        }
+    }
+    android.webkit.WebView.loadViewUrlHandler = java.util.function.BiConsumer { view, url ->
+        appScope.launch {
+            val client = view.webViewClient ?: return@launch
+            WebViewResolver.webViewHandler?.invoke(
+                okhttp3.Request.Builder().url(url).build(),
+            ) { intercepted ->
+                client.shouldInterceptRequest(
+                    view,
+                    object : android.webkit.WebResourceRequest {
+                        override fun getUrl() = android.net.Uri.parse(intercepted.url.toString())
+                        override fun getMethod() = intercepted.method
+                        override fun getRequestHeaders() = intercepted.headers.toMap()
+                        override fun isForMainFrame() = false
+                        override fun hasGesture() = false
+                        override fun isRedirect() = false
+                    },
+                )
+                false
+            }
+            client.onPageFinished(view, url)
         }
     }
 
