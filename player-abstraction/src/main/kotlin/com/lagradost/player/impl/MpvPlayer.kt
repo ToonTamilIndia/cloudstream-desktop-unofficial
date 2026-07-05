@@ -40,8 +40,14 @@ class MpvPlayer : MediaPlayer {
                 process.set(started)
                 _state.value = PlayerState(isPlaying = true, currentUrl = stream.url)
                 scope.launch {
-                    started.inputStream.bufferedReader().useLines { lines -> lines.forEach { AppLogger.i("MPV: $it") } }
-                    started.waitFor()
+                    try {
+                        started.inputStream.bufferedReader().useLines { lines ->
+                            lines.forEach { AppLogger.i("MPV: $it") }
+                        }
+                    } catch (_: java.io.IOException) {
+                        // Expected when a previous MPV process is replaced and its output stream closes.
+                    }
+                    runCatching { started.waitFor() }
                     if (process.compareAndSet(started, null)) _state.value = PlayerState(isFinished = true)
                 }
                 AppLogger.i("Launching external MPV (${stream.streamKind}): ${stream.displayTitle}")

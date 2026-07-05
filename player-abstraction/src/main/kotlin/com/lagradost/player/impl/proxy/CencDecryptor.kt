@@ -204,6 +204,7 @@ class CencDecryptor(
                 break
             }
 
+            // For an 8-byte CENC IV, the remaining 64-bit counter starts at zero.
             val fullIv = ByteArray(16)
             System.arraycopy(iv, 0, fullIv, 0, 8)
 
@@ -214,10 +215,15 @@ class CencDecryptor(
                 System.arraycopy(decrypted, 0, data, cursor, decrypted.size)
             } else {
                 var localCursor = cursor
-                for ((clearBytes, encryptedBytes) in subsamples) {
+                for (sIdx in subsamples.indices) {
+                    val (clearBytes, encryptedBytes) = subsamples[sIdx]
                     localCursor += clearBytes
                     if (encryptedBytes > 0 && localCursor + encryptedBytes <= data.size) {
-                        val decrypted = cipher.doFinal(data, localCursor, encryptedBytes)
+                        val decrypted = if (sIdx == subsamples.lastIndex) {
+                            cipher.doFinal(data, localCursor, encryptedBytes)
+                        } else {
+                            cipher.update(data, localCursor, encryptedBytes)
+                        }
                         System.arraycopy(decrypted, 0, data, localCursor, decrypted.size)
                         localCursor += encryptedBytes
                     }

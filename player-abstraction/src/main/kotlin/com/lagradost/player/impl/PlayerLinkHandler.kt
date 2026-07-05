@@ -111,17 +111,14 @@ object PlayerLinkHandler {
         // HLS and DASH manifests contain recursive child requests. Proxy them whenever
         // headers must be inherited by playlists, keys, init segments, and media segments.
         val useProxy = useLocalProxy &&
-            (kind == StreamKind.HLS || (kind == StreamKind.DASH && headers.isNotEmpty()))
+            (kind == StreamKind.HLS ||
+                (kind == StreamKind.DASH && (headers.isNotEmpty() || drmInfo?.key?.isNotBlank() == true)))
         var finalSessionId: String? = null
         val finalUrl = if (useProxy) {
-            val drmKeyBytes = drmInfo?.key?.let { keyB64 ->
-                try {
-                    java.util.Base64.getDecoder().decode(keyB64.trim())
-                } catch (e: Exception) {
-                    null
-                }
-            }
-            val sessionId = com.lagradost.player.impl.proxy.LocalStreamProxy.registerSession(headers, drmKeyBytes)
+            val drmKeyBytes = drmInfo?.key?.let(::decodeDrmBase64)
+            val kidHex = drmInfo?.kid?.let(::decodeDrmBase64)
+                ?.joinToString("") { "%02x".format(it) }
+            val sessionId = com.lagradost.player.impl.proxy.LocalStreamProxy.registerSession(headers, drmKeyBytes, kidHex)
             finalSessionId = sessionId
             com.lagradost.player.impl.proxy.LocalStreamProxy.buildProxyUrl(sessionId, url)
         } else {
@@ -165,6 +162,13 @@ object PlayerLinkHandler {
                 drmInfo = drmInfo,
             ),
         )
+    }
+
+    private fun decodeDrmBase64(value: String): ByteArray? {
+        val normalized = value.trim().padEnd((value.trim().length + 3) / 4 * 4, '=')
+        return runCatching { java.util.Base64.getUrlDecoder().decode(normalized) }.getOrElse {
+            runCatching { java.util.Base64.getDecoder().decode(normalized) }.getOrNull()
+        }
     }
 
     fun buildHeaderMap(link: ExtractorLink): Map<String, String> {
@@ -338,22 +342,26 @@ object PlayerLinkHandler {
      */
     fun buildHeadersCliArg(headers: Map<String, String>): List<String> {
         if (headers.isEmpty()) return emptyList()
-        val headerStr = headers.entries.joinToString(separator = "\r\n", postfix = "\r\n") { (k, v) ->
-            "$k: ${v.replace("\r", "").replace("\n", "")}"
+        // Pass only headers that aren't already native MPV options
+        // (User-Agent and Referer are set via --user-agent / --referrer).
+        // Exclude them here to avoid duplicating or conflicting values.
+        val extraHeaders = headers.filter { (key, _) ->
+            !key.equals("user-agent", ignoreCase = true) &&
+            !key.equals("referer", ignoreCase = true) &&
+            !key.equals("referrer", ignoreCase = true)
         }
-        val byteLength = headerStr.toByteArray(Charsets.UTF_8).size
+        if (extraHeaders.isEmpty()) return emptyList()
 
-        // MPV's --http-header-fields is a comma-separated list option.
-        // Commas in values must be escaped. It does NOT take CRLF strings!
-        val httpHeaderFields = headers.entries.joinToString(separator = ",") { (k, v) ->
+        // MPV's --http-header-fields is a comma-separated list.
+        // Commas in values must be escaped.
+        val httpHeaderFields = extraHeaders.entries.joinToString(separator = ",") { (k, v) ->
             val cleanV = v.replace("\r", "").replace("\n", "").replace(",", "\\,")
             "$k: $cleanV"
         }
-
-        return listOf(
-            "--demuxer-lavf-o-append=headers=%$byteLength%$headerStr",
-            "--http-header-fields=$httpHeaderFields",
-        )
+        // Skip --demuxer-lavf-o-append=headers=... because the %N% byte-length
+        // escape is unreliable inside sub-option strings, and CRLF chars can
+        // corrupt the lavf option parser. --http-header-fields alone is sufficient.
+        return listOf("--http-header-fields=$httpHeaderFields")
     }
 
     /**

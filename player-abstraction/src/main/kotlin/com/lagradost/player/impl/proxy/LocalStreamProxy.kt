@@ -21,6 +21,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Response
+import java.io.File
 import java.io.IOException
 import java.net.URI
 import java.util.Base64
@@ -57,15 +58,19 @@ object LocalStreamProxy {
     data class ProxySession(
         val headers: Map<String, String>,
         val drmKey: ByteArray? = null,
+        val kidHex: String? = null,
     ) {
+        /** Encrypted DASH init segments, required by Bento4 to decrypt standalone fragments. */
+        val fragmentInfo = java.util.concurrent.ConcurrentHashMap<String, ByteArray>()
+
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
             if (other !is ProxySession) return false
-            return headers == other.headers && drmKey.contentEquals(other.drmKey)
+            return headers == other.headers && drmKey.contentEquals(other.drmKey) && kidHex == other.kidHex
         }
 
         override fun hashCode(): Int {
-            return 31 * headers.hashCode() + (drmKey?.contentHashCode() ?: 0)
+            return 31 * (31 * headers.hashCode() + (drmKey?.contentHashCode() ?: 0)) + (kidHex?.hashCode() ?: 0)
         }
     }
 
@@ -114,9 +119,9 @@ object LocalStreamProxy {
         sessions.clear()
     }
 
-    fun registerSession(headers: Map<String, String>, drmKey: ByteArray? = null): String {
+    fun registerSession(headers: Map<String, String>, drmKey: ByteArray? = null, kidHex: String? = null): String {
         val sessionId = UUID.randomUUID().toString()
-        sessions[sessionId] = ProxySession(headers, drmKey)
+        sessions[sessionId] = ProxySession(headers, drmKey, kidHex)
         return sessionId
     }
 
@@ -169,12 +174,13 @@ object LocalStreamProxy {
             it.header("Content-Range")?.let { value -> call.response.header("Content-Range", value) }
             it.header("Accept-Ranges")?.let { value -> call.response.header("Accept-Ranges", value) }
             val bytes = withContext(ProxyIoDispatcher) { it.body?.bytes() ?: ByteArray(0) }
+            val outputBytes = decryptSegmentIfNeeded(bytes, session, it.header("Content-Type").orEmpty(), url)
             val type = try {
                 ContentType.parse(it.header("Content-Type") ?: "application/octet-stream")
             } catch (_: Exception) {
                 ContentType.Application.OctetStream
             }
-            call.respondBytes(bytes, type, HttpStatusCode.fromValue(it.code))
+            call.respondBytes(outputBytes, type, HttpStatusCode.fromValue(it.code))
         }
     }
 
@@ -270,13 +276,7 @@ object LocalStreamProxy {
                     val rawBytes = withContext(ProxyIoDispatcher) {
                         response.body?.bytes() ?: ByteArray(0)
                     }
-                    val decryptor = CencDecryptor(rawBytes, drmKey)
-                    val finalBytes = if (decryptor.isPossiblyCencEncrypted()) {
-                        AppLogger.i("LocalStreamProxy: CENC-encrypted segment detected, decrypting...")
-                        decryptor.decrypt()
-                    } else {
-                        rawBytes
-                    }
+                    val finalBytes = decryptSegmentIfNeeded(rawBytes, session, contentTypeStr, url)
                     val parsedContentType = try {
                         ContentType.parse(contentTypeStr)
                     } catch (e: Exception) {
@@ -372,6 +372,127 @@ object LocalStreamProxy {
             )
         }
         return withBases
+    }
+
+    private var mp4DecryptPath: String? = null
+    private var mp4DecryptSearched = false
+
+    private fun findMp4Decrypt(): String? {
+        if (mp4DecryptSearched) return mp4DecryptPath
+        mp4DecryptSearched = true
+        val candidates = listOf(
+            "/usr/local/sbin/mp4decrypt",
+            "/usr/bin/mp4decrypt",
+            "/usr/local/bin/mp4decrypt",
+        ) + (System.getenv("PATH")?.split(File.pathSeparator)?.map { "$it/mp4decrypt" } ?: emptyList())
+        for (path in candidates) {
+            val f = File(path)
+            if (f.isFile && f.canExecute()) {
+                mp4DecryptPath = f.absolutePath
+                AppLogger.i("LocalStreamProxy: found mp4decrypt at ${f.absolutePath}")
+                return mp4DecryptPath
+            }
+        }
+        AppLogger.w("LocalStreamProxy: mp4decrypt not found — CENC decryption will fall back")
+        return null
+    }
+
+    private suspend fun decryptWithMp4Decrypt(
+        data: ByteArray,
+        kidHex: String,
+        keyBytes: ByteArray,
+        fragmentsInfo: ByteArray? = null,
+    ): ByteArray {
+        val executable = findMp4Decrypt()
+            ?: return CencDecryptor(data, keyBytes).decrypt()
+
+        val keyHex = keyBytes.joinToString("") { "%02x".format(it) }
+        val inputFile = File.createTempFile("cenc_in_", ".m4s").apply { deleteOnExit() }
+        val outputFile = File.createTempFile("cenc_out_", ".m4s").apply { deleteOnExit() }
+        val fragmentsInfoFile = fragmentsInfo?.let {
+            File.createTempFile("cenc_init_", ".mp4").apply { deleteOnExit() }
+        }
+
+        return withContext(ProxyIoDispatcher) {
+            try {
+                inputFile.writeBytes(data)
+                fragmentsInfo?.let { fragmentsInfoFile?.writeBytes(it) }
+                val arguments = mutableListOf(executable, "--key", "$kidHex:$keyHex")
+                fragmentsInfoFile?.let { arguments += listOf("--fragments-info", it.absolutePath) }
+                arguments += listOf(inputFile.absolutePath, outputFile.absolutePath)
+                val process = ProcessBuilder(arguments).redirectErrorStream(true).start()
+                process.waitFor()
+                if (process.exitValue() != 0) {
+                    val err = process.inputStream.bufferedReader().readText()
+                    AppLogger.w("mp4decrypt failed (exit ${process.exitValue()}): $err")
+                    @Suppress("UNCHECKED_CAST")
+                    CencDecryptor(data, keyBytes).decrypt()
+                } else {
+                    if (outputFile.isFile && outputFile.length() > 0) {
+                        outputFile.readBytes()
+                    } else {
+                        AppLogger.w("mp4decrypt produced empty output, falling back")
+                        CencDecryptor(data, keyBytes).decrypt()
+                    }
+                }
+            } catch (e: Exception) {
+                AppLogger.e("mp4decrypt error: ${e.message}, falling back")
+                CencDecryptor(data, keyBytes).decrypt()
+            } finally {
+                inputFile.delete()
+                outputFile.delete()
+                fragmentsInfoFile?.delete()
+            }
+        }
+    }
+
+    private suspend fun decryptSegmentIfNeeded(
+        data: ByteArray,
+        session: ProxySession,
+        contentType: String,
+        sourceUrl: String,
+    ): ByteArray {
+        val key = session.drmKey ?: return data
+        val canBeMp4 = contentType.contains("mp4", true) ||
+            contentType.contains("octet-stream", true) || contentType.isBlank()
+        if (!canBeMp4) return data
+        val hasMoov = containsMp4Box(data, "moov")
+        val hasMoof = containsMp4Box(data, "moof")
+        if (!hasMoov && !hasMoof) return data
+
+        val fragmentKey = dashFragmentKey(sourceUrl)
+        if (hasMoov) session.fragmentInfo[fragmentKey] = data
+
+        return if (session.kidHex != null) {
+            val fragmentsInfo = if (hasMoof) session.fragmentInfo[fragmentKey] else null
+            if (hasMoof && fragmentsInfo == null) {
+                AppLogger.w("LocalStreamProxy: DASH fragment arrived before its init segment; returning encrypted data")
+                return data
+            }
+            AppLogger.i("LocalStreamProxy: CENC ${if (hasMoov) "init" else "media"} segment detected, decrypting")
+            decryptWithMp4Decrypt(data, session.kidHex, key, fragmentsInfo)
+        } else {
+            AppLogger.w("LocalStreamProxy: CENC segment has no KID, using built-in decryptor")
+            CencDecryptor(data, key).decrypt()
+        }
+    }
+
+    /** Maps `name-representation-12345.m4s` and `name-representation.m4s` to the same init key. */
+    private fun dashFragmentKey(url: String): String {
+        val uri = runCatching { URI(url) }.getOrNull()
+        val path = uri?.path ?: url.substringBefore('?')
+        return path.replace(Regex("-\\d+(?=\\.[^./]+$)"), "")
+    }
+
+    internal fun containsMp4Box(data: ByteArray, type: String): Boolean {
+        if (type.length != 4) return false
+        val marker = type.toByteArray(Charsets.US_ASCII)
+        for (index in 4..data.size - 4) {
+            if (data[index] == marker[0] && data[index + 1] == marker[1] &&
+                data[index + 2] == marker[2] && data[index + 3] == marker[3]
+            ) return true
+        }
+        return false
     }
 
     private fun resolveUrl(base: String, uri: String): String {

@@ -33,6 +33,7 @@ import com.lagradost.cloudstream3.desktop.ui.components.DesktopUi
 import com.lagradost.cloudstream3.desktop.ui.theme.AppearanceConfig
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.DrmExtractorLink
 import com.lagradost.common.storage.DesktopDataStore
 import com.lagradost.common.storage.WatchHistory
 import kotlinx.coroutines.Dispatchers
@@ -489,15 +490,40 @@ private fun ChannelCard(
     }
 }
 
+@OptIn(kotlin.uuid.ExperimentalUuidApi::class)
 private fun playChannel(channel: IptvChannel, playVideo: (VideoLaunchData) -> Unit) {
-    val link = ExtractorLink(
-        source = "IPTV",
-        name = channel.name,
-        url = channel.url,
-        referer = "",
-        quality = 1080,
-        type = ExtractorLinkType.M3U8,
-    )
+    val streamType = if (channel.manifestType.equals("mpd", true) || channel.url.contains(".mpd", true)) {
+        ExtractorLinkType.DASH
+    } else {
+        ExtractorLinkType.M3U8
+    }
+    val clearKey = channel.licenseKey?.takeIf {
+        channel.drmType.equals("clearkey", true) && STATIC_CLEAR_KEY.matches(it)
+    }?.split(':', limit = 2)
+    val link: ExtractorLink = if (clearKey != null) {
+        @Suppress("DEPRECATION_ERROR")
+        DrmExtractorLink(
+            source = "IPTV",
+            name = channel.name,
+            url = channel.url,
+            referer = channel.headers.entries.firstOrNull { it.key.equals("Referer", true) }?.value,
+            quality = 1080,
+            type = streamType,
+            headers = channel.headers,
+            kid = hexToBase64Url(clearKey[0]),
+            key = hexToBase64Url(clearKey[1]),
+        )
+    } else {
+        ExtractorLink(
+            source = "IPTV",
+            name = channel.name,
+            url = channel.url,
+            referer = channel.headers.entries.firstOrNull { it.key.equals("Referer", true) }?.value ?: "",
+            quality = 1080,
+            headers = channel.headers,
+            type = streamType,
+        )
+    }
     playVideo(
         VideoLaunchData(
             links = listOf(link),
@@ -517,6 +543,16 @@ private fun playChannel(channel: IptvChannel, playVideo: (VideoLaunchData) -> Un
                 position = 0,
                 duration = 0,
             ),
+            useLocalProxy = clearKey != null,
         )
     )
+}
+
+private val STATIC_CLEAR_KEY = Regex("^[0-9a-fA-F]{32}:[0-9a-fA-F]{32}$")
+
+private fun hexToBase64Url(hex: String): String {
+    val bytes = ByteArray(hex.length / 2) { index ->
+        hex.substring(index * 2, index * 2 + 2).toInt(16).toByte()
+    }
+    return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 }

@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.SubtitleFile
@@ -58,7 +59,7 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
     var selectedPlayer by remember {
         mutableStateOf(
             when (val saved = DesktopDataStore.getKey<String>("preferred_player") ?: "embedded") {
-                "web" -> "embedded"
+                "web", "local_proxy", "local_stream" -> "embedded"
                 else -> saved
             },
         )
@@ -154,52 +155,101 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
         }
     }
 
-    val playLink: (ExtractorLink) -> Unit = { link ->
+    suspend fun proxyValidatedLink(link: ExtractorLink): ExtractorLink {
+        val v = PlayerLinkHandler.validate(link, displayTitle, useLocalProxy = true).getOrElse {
+            throw it
+        }
+        return com.lagradost.cloudstream3.utils.newExtractorLink(
+            source = link.source, name = link.name, url = v.url, type = link.type,
+        ).apply { quality = link.quality }
+    }
+
+    val playLink: (link: ExtractorLink, useProxy: Boolean) -> Unit = { link, useProxy ->
         if (!(isLaunchingPlayer && currentPlayingUrl == null)) {
-            val validation = PlayerLinkHandler.validate(link, displayTitle)
-            if (validation.isFailure) {
-                statusText = validation.exceptionOrNull()?.message ?: "Invalid stream"
-            } else {
-                isLaunchingPlayer = true
-                currentPlayingUrl = link.url
-                val effectivePlayer = selectedPlayer
-                statusText = "Launching ${selectedPlayer.uppercase()}..."
+            isLaunchingPlayer = true
+            currentPlayingUrl = link.url
+            val effectivePlayer = selectedPlayer
+            statusText = "Launching ${selectedPlayer.uppercase()}..."
 
-                val latestHistory = DesktopDataStore.getEpisodeWatched(history.parentId, history.episodeId) ?: history
-                val startSec = PlayerLinkHandler.resumeStartSeconds(latestHistory.position, latestHistory.duration)
-                val startMs = startSec * 1000L
+            val latestHistory = DesktopDataStore.getEpisodeWatched(history.parentId, history.episodeId) ?: history
+            val startSec = PlayerLinkHandler.resumeStartSeconds(latestHistory.position, latestHistory.duration)
+            val startMs = startSec * 1000L
 
-                val subUrls = subtitles.map { it.url }.filter { it.isNotBlank() }
-                if (effectivePlayer == "vlc") {
-                    coroutineScope.launch {
-                        val result = vlcPlayer.play(link, displayTitle, subUrls, startMs)
+            val subUrls = subtitles.map { it.url }.filter { it.isNotBlank() }
+            if (effectivePlayer == "vlc") {
+                coroutineScope.launch {
+                    try {
+                        val playLink = if (useProxy) {
+                            proxyValidatedLink(link)
+                        } else {
+                            val v = PlayerLinkHandler.validate(link, displayTitle).getOrElse {
+                                statusText = it.message ?: "Invalid stream"
+                                isLaunchingPlayer = false; currentPlayingUrl = null; return@launch
+                            }
+                            com.lagradost.cloudstream3.utils.newExtractorLink(
+                                source = link.source, name = link.name, url = v.url, type = link.type,
+                            ).apply { quality = link.quality }
+                        }
+                        val result = vlcPlayer.play(playLink, displayTitle, subUrls, startMs)
                         if (result.isSuccess) {
-                            statusText = "Playing: ${link.name}"
+                            statusText = if (useProxy) "Proxy Stream (VLC): ${link.name}" else "Playing: ${link.name}"
                             playerLaunchError = null
                         } else {
                             playerLaunchError = result.exceptionOrNull()?.message ?: "Failed to launch player"
                             statusText = "Could not start player."
-                            isLaunchingPlayer = false
-                            currentPlayingUrl = null
+                            isLaunchingPlayer = false; currentPlayingUrl = null
                         }
+                    } catch (e: Exception) {
+                        playerLaunchError = e.message ?: "Failed to launch player"
+                        statusText = "Could not start player."
+                        isLaunchingPlayer = false; currentPlayingUrl = null
                     }
-                } else if (effectivePlayer == "mpv") {
-                    coroutineScope.launch {
-                        val result = mpvPlayer.play(link, displayTitle, subUrls, startMs)
+                }
+            } else if (effectivePlayer == "mpv") {
+                coroutineScope.launch {
+                    try {
+                        val playLink = if (useProxy) {
+                            proxyValidatedLink(link)
+                        } else {
+                            val v = PlayerLinkHandler.validate(link, displayTitle).getOrElse {
+                                statusText = it.message ?: "Invalid stream"
+                                isLaunchingPlayer = false; currentPlayingUrl = null; return@launch
+                            }
+                            com.lagradost.cloudstream3.utils.newExtractorLink(
+                                source = link.source, name = link.name, url = v.url, type = link.type,
+                            ).apply { quality = link.quality }
+                        }
+                        val result = mpvPlayer.play(playLink, displayTitle, subUrls, startMs)
                         if (result.isSuccess) {
-                            statusText = "Playing in external MPV: ${link.name}"
+                            statusText = if (useProxy) "Proxy Stream (MPV): ${link.name}" else "Playing in external MPV: ${link.name}"
                             playerLaunchError = null
                         } else {
                             playerLaunchError = result.exceptionOrNull()?.message ?: "Failed to launch MPV"
                             statusText = "Could not start MPV."
-                            isLaunchingPlayer = false
-                            currentPlayingUrl = null
+                            isLaunchingPlayer = false; currentPlayingUrl = null
                         }
+                    } catch (e: Exception) {
+                        playerLaunchError = e.message ?: "Failed to launch MPV"
+                        statusText = "Could not start MPV."
+                        isLaunchingPlayer = false; currentPlayingUrl = null
                     }
-                } else if (effectivePlayer == "kodi") {
-                    coroutineScope.launch {
+                }
+            } else if (effectivePlayer == "kodi") {
+                coroutineScope.launch {
+                    try {
+                        val playLink = if (useProxy) {
+                            proxyValidatedLink(link)
+                        } else {
+                            val v = PlayerLinkHandler.validate(link, displayTitle).getOrElse {
+                                statusText = it.message ?: "Invalid stream"
+                                isLaunchingPlayer = false; currentPlayingUrl = null; return@launch
+                            }
+                            com.lagradost.cloudstream3.utils.newExtractorLink(
+                                source = link.source, name = link.name, url = v.url, type = link.type,
+                            ).apply { quality = link.quality }
+                        }
                         try {
-                            val result = kodiPlayer.play(link, displayTitle, subUrls, startMs)
+                            val result = kodiPlayer.play(playLink, displayTitle, subUrls, startMs)
                             if (result.isSuccess) {
                                 statusText = "Sent to Kodi: ${link.name}"
                                 playerLaunchError = null
@@ -214,8 +264,7 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
                                     playerLaunchError = error?.message ?: "Failed to send to Kodi"
                                 }
                                 statusText = "Could not reach Kodi."
-                                isLaunchingPlayer = false
-                                currentPlayingUrl = null
+                                isLaunchingPlayer = false; currentPlayingUrl = null
                             }
                         } catch (e: KodiAuthException) {
                             kodiPendingLink = link
@@ -223,39 +272,42 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
                             kodiAuthPass = KodiConfig.password
                             showKodiAuthDialog = true
                             statusText = "Kodi authentication required."
+                            isLaunchingPlayer = false; currentPlayingUrl = null
+                        }
+                    } catch (e: Exception) {
+                        playerLaunchError = e.message ?: "Failed to send to Kodi"
+                        statusText = "Could not reach Kodi."
+                        isLaunchingPlayer = false; currentPlayingUrl = null
+                    }
+                }
+            } else {
+                val initialIndex = filteredLinks.indexOfFirst { it.url == link.url }.coerceAtLeast(0)
+                playVideo(
+                    com.lagradost.cloudstream3.desktop.ui.VideoLaunchData(
+                        links = filteredLinks,
+                        initialIndex = initialIndex,
+                        title = displayTitle,
+                        subtitles = subtitles.filter { it.url.isNotBlank() },
+                        startPositionMs = startMs,
+                        history = history,
+                        useLocalProxy = useProxy,
+                        onError = { err ->
+                            embeddedError = err
+                        },
+                        onClosed = {
                             isLaunchingPlayer = false
                             currentPlayingUrl = null
-                        }
-                    }
+                            statusText = "Ready — ${links.size} stream${if (links.size == 1) "" else "s"} available."
+                        },
+                    ),
+                )
+                statusText = if (useProxy) {
+                    "Playing through Proxy Stream: ${link.name}"
                 } else {
-                    val initialIndex = filteredLinks.indexOfFirst { it.url == link.url }.coerceAtLeast(0)
-                    playVideo(
-                        com.lagradost.cloudstream3.desktop.ui.VideoLaunchData(
-                            links = filteredLinks,
-                            initialIndex = initialIndex,
-                            title = displayTitle,
-                            subtitles = subtitles.filter { it.url.isNotBlank() },
-                            startPositionMs = startMs,
-                            history = history,
-                            useLocalProxy = effectivePlayer == "local_proxy",
-                            onError = { err ->
-                                embeddedError = err
-                            },
-                            onClosed = {
-                                isLaunchingPlayer = false
-                                currentPlayingUrl = null
-                                statusText = "Ready — ${links.size} stream${if (links.size == 1) "" else "s"} available."
-                            },
-                        ),
-                    )
-                    statusText = if (effectivePlayer == "local_proxy") {
-                        "Playing through Local Proxy: ${link.name}"
-                    } else {
-                        "Playing in Embedded Player: ${link.name}"
-                    }
-                    // We don't set isLaunchingPlayer=false here because the embedded player is an overlay
-                    // and we want it to block interaction until it closes.
+                    "Playing in Embedded Player: ${link.name}"
                 }
+                // We don't set isLaunchingPlayer=false here because the embedded player is an overlay
+                // and we want it to block interaction until it closes.
             }
         }
     }
@@ -380,7 +432,7 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
                                 link = link,
                                 isBusy = isLaunchingPlayer && currentPlayingUrl != link.url,
                                 onPlay = {
-                                    playLink(link)
+                                    playLink(link, false)
                                 },
                                 onCopy = {
                                     if (link.url.isNotBlank()) {
@@ -389,6 +441,9 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
                                             .setContents(selection, selection)
                                         statusText = "URL copied to clipboard."
                                     }
+                                },
+                                onProxyPlay = {
+                                    playLink(link, true)
                                 },
                             )
                         }
@@ -449,7 +504,7 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
                                 val pending = kodiPendingLink
                                 kodiPendingLink = null
                                 if (pending != null) {
-                                    playLink(pending)
+                                    playLink(pending, false)
                                 }
                             }) { Text("Connect") }
                         },
@@ -565,16 +620,6 @@ private fun PlayerSelector(selectedPlayer: String, onSelect: (String) -> Unit) {
                 selectedLabelColor = DesktopUi.Accent,
             ),
         )
-        Spacer(modifier = Modifier.width(8.dp))
-        FilterChip(
-            selected = selectedPlayer == "local_proxy",
-            onClick = { onSelect("local_proxy") },
-            label = { Text("Local Proxy") },
-            colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = DesktopUi.AccentSoft,
-                selectedLabelColor = DesktopUi.Accent,
-            ),
-        )
     }
 }
 
@@ -584,6 +629,7 @@ private fun StreamLinkCard(
     isBusy: Boolean,
     onPlay: () -> Unit,
     onCopy: () -> Unit,
+    onProxyPlay: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
@@ -607,6 +653,7 @@ private fun StreamLinkCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     link.name,
+                    maxLines = 2,
                     fontWeight = FontWeight.SemiBold,
                     style = MaterialTheme.typography.titleMedium,
                     color = DesktopUi.TextPrimary,
@@ -636,6 +683,14 @@ private fun StreamLinkCard(
                 shape = RoundedCornerShape(10.dp),
             ) {
                 Text("Copy")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            OutlinedButton(
+                onClick = onProxyPlay,
+                enabled = !isBusy,
+                shape = RoundedCornerShape(10.dp),
+            ) {
+                Text("Proxy")
             }
             Spacer(modifier = Modifier.width(8.dp))
             Button(

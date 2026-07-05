@@ -11,6 +11,10 @@ data class IptvChannel(
     val group: String? = null,
     val tvgId: String? = null,
     val tvgName: String? = null,
+    val manifestType: String? = null,
+    val drmType: String? = null,
+    val licenseKey: String? = null,
+    val headers: Map<String, String> = emptyMap(),
 )
 
 object IptvParser {
@@ -26,10 +30,37 @@ object IptvParser {
         var extinfGroup: String? = null
         var extinfTvgId: String? = null
         var extinfTvgName: String? = null
+        var manifestType: String? = null
+        var drmType: String? = null
+        var licenseKey: String? = null
+        val headers = linkedMapOf<String, String>()
 
         while (reader.readLine().also { line = it } != null) {
             val current = line!!.trim()
-            if (current.startsWith("#EXTINF:")) {
+            when {
+            current.startsWith("#KODIPROP:inputstream.adaptive.manifest_type=", ignoreCase = true) -> {
+                manifestType = current.substringAfter('=').trim()
+            }
+            current.startsWith("#KODIPROP:inputstream.adaptive.license_type=", ignoreCase = true) -> {
+                drmType = current.substringAfter('=').trim()
+            }
+            current.startsWith("#KODIPROP:inputstream.adaptive.license_key=", ignoreCase = true) -> {
+                licenseKey = current.substringAfter('=').trim()
+            }
+            current.startsWith("#EXTVLCOPT:http-user-agent=", ignoreCase = true) -> {
+                headers["User-Agent"] = current.substringAfter('=').trim()
+            }
+            current.startsWith("#EXTVLCOPT:http-referrer=", ignoreCase = true) ||
+                current.startsWith("#EXTVLCOPT:http-referer=", ignoreCase = true) -> {
+                headers["Referer"] = current.substringAfter('=').trim()
+            }
+            current.startsWith("#EXTVLCOPT:http-origin=", ignoreCase = true) -> {
+                headers["Origin"] = current.substringAfter('=').trim()
+            }
+            current.startsWith("#EXTHTTP:", ignoreCase = true) -> {
+                parseExtHttpHeaders(current.substringAfter(':')).forEach { (key, value) -> headers[key] = value }
+            }
+            current.startsWith("#EXTINF:") -> {
                 val match = extinfRegex.find(current)
                 if (match != null) {
                     extinfLogo = match.groupValues[1].takeIf { it.isNotBlank() }
@@ -44,7 +75,8 @@ object IptvParser {
                     extinfLogo = null; extinfGroup = null; extinfTvgId = null; extinfTvgName = null
                 }
                 extinfLine = current
-            } else if (current.isNotBlank() && !current.startsWith("#") && extinfLine != null) {
+            }
+            current.isNotBlank() && !current.startsWith("#") && extinfLine != null -> {
                 onChannel(
                     IptvChannel(
                         name = extinfName ?: "Unknown",
@@ -53,6 +85,10 @@ object IptvParser {
                         group = extinfGroup,
                         tvgId = extinfTvgId,
                         tvgName = extinfTvgName,
+                        manifestType = manifestType,
+                        drmType = drmType,
+                        licenseKey = licenseKey,
+                        headers = headers.toMap(),
                     )
                 )
                 extinfLine = null
@@ -61,8 +97,29 @@ object IptvParser {
                 extinfGroup = null
                 extinfTvgId = null
                 extinfTvgName = null
+                manifestType = null
+                drmType = null
+                licenseKey = null
+                headers.clear()
+            }
             }
         }
+    }
+
+    private fun parseExtHttpHeaders(json: String): Map<String, String> {
+        val result = linkedMapOf<String, String>()
+        Regex(""""([^"\\]+)"\s*:\s*"((?:\\.|[^"\\])*)"""").findAll(json).forEach { match ->
+            val rawKey = match.groupValues[1]
+            val key = when {
+                rawKey.equals("cookie", true) -> "Cookie"
+                rawKey.equals("user-agent", true) -> "User-Agent"
+                rawKey.equals("referer", true) || rawKey.equals("referrer", true) -> "Referer"
+                rawKey.equals("origin", true) -> "Origin"
+                else -> rawKey
+            }
+            result[key] = match.groupValues[2].replace("\\\"", "\"").replace("\\\\", "\\")
+        }
+        return result
     }
 
     fun parseStreamToList(inputStream: InputStream): List<IptvChannel> {
