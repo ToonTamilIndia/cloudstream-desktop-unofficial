@@ -1,5 +1,9 @@
 package com.lagradost.cloudstream3.desktop.iptv
 
+import java.io.BufferedReader
+import java.io.InputStream
+import java.io.InputStreamReader
+
 data class IptvChannel(
     val name: String,
     val url: String,
@@ -10,45 +14,60 @@ data class IptvChannel(
 )
 
 object IptvParser {
-    fun parseM3u(content: String): List<IptvChannel> {
-        val channels = mutableListOf<IptvChannel>()
-        val lines = content.lines()
-        var i = 0
-        while (i < lines.size) {
-            val line = lines[i].trim()
-            if (line.startsWith("#EXTINF:")) {
-                // Parse #EXTINF:-1 tvg-id="" tvg-name="" tvg-logo="" group-title="",Name
-                val logo = Regex("""tvg-logo="([^"]*)"""").find(line)?.groupValues?.getOrNull(1)
-                val group = Regex("""group-title="([^"]*)"""").find(line)?.groupValues?.getOrNull(1)
-                val tvgId = Regex("""tvg-id="([^"]*)"""").find(line)?.groupValues?.getOrNull(1)
-                val tvgName = Regex("""tvg-name="([^"]*)"""").find(line)?.groupValues?.getOrNull(1)
+    private val extinfRegex = Regex("""#EXTINF:.*?tvg-logo="([^"]*)".*?group-title="([^"]*)".*?tvg-id="([^"]*)".*?tvg-name="([^"]*)".*?,(.*)""")
+    private val extinfFallbackRegex = Regex("""#EXTINF:.*?,(.*)""")
 
-                // Name is after the last comma in #EXTINF line
-                val name = line.substringAfterLast(",", "").trim().ifBlank {
-                    // Fallback: extract from tvg-name
-                    tvgName ?: "Unknown"
-                }
+    fun parseStream(inputStream: InputStream, onChannel: (IptvChannel) -> Unit) {
+        val reader = BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8))
+        var line: String?
+        var extinfLine: String? = null
+        var extinfName: String? = null
+        var extinfLogo: String? = null
+        var extinfGroup: String? = null
+        var extinfTvgId: String? = null
+        var extinfTvgName: String? = null
 
-                // Next line should be the URL
-                i++
-                if (i < lines.size) {
-                    val url = lines[i].trim()
-                    if (url.isNotBlank() && !url.startsWith("#")) {
-                        channels.add(
-                            IptvChannel(
-                                name = name,
-                                url = url,
-                                logo = logo?.takeIf { it.isNotBlank() },
-                                group = group?.takeIf { it.isNotBlank() },
-                                tvgId = tvgId?.takeIf { it.isNotBlank() },
-                                tvgName = tvgName?.takeIf { it.isNotBlank() },
-                            )
-                        )
-                    }
+        while (reader.readLine().also { line = it } != null) {
+            val current = line!!.trim()
+            if (current.startsWith("#EXTINF:")) {
+                val match = extinfRegex.find(current)
+                if (match != null) {
+                    extinfLogo = match.groupValues[1].takeIf { it.isNotBlank() }
+                    extinfGroup = match.groupValues[2].takeIf { it.isNotBlank() }
+                    extinfTvgId = match.groupValues[3].takeIf { it.isNotBlank() }
+                    extinfTvgName = match.groupValues[4].takeIf { it.isNotBlank() }
+                    extinfName = match.groupValues[5].trim().takeIf { it.isNotBlank() }
+                        ?: extinfTvgName
+                } else {
+                    val fallback = extinfFallbackRegex.find(current)
+                    extinfName = fallback?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
+                    extinfLogo = null; extinfGroup = null; extinfTvgId = null; extinfTvgName = null
                 }
+                extinfLine = current
+            } else if (current.isNotBlank() && !current.startsWith("#") && extinfLine != null) {
+                onChannel(
+                    IptvChannel(
+                        name = extinfName ?: "Unknown",
+                        url = current,
+                        logo = extinfLogo,
+                        group = extinfGroup,
+                        tvgId = extinfTvgId,
+                        tvgName = extinfTvgName,
+                    )
+                )
+                extinfLine = null
+                extinfName = null
+                extinfLogo = null
+                extinfGroup = null
+                extinfTvgId = null
+                extinfTvgName = null
             }
-            i++
         }
+    }
+
+    fun parseStreamToList(inputStream: InputStream): List<IptvChannel> {
+        val channels = mutableListOf<IptvChannel>()
+        parseStream(inputStream) { channels.add(it) }
         return channels
     }
 }
