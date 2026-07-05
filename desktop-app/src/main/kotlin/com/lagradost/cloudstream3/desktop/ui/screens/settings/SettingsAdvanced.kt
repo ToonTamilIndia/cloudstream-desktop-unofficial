@@ -25,7 +25,9 @@ fun SettingsAdvanced() {
     val scope = rememberCoroutineScope()
     val isBrowserInstalled by PlaywrightManager.isInstalled.collectAsState()
     val isBrowserDownloading by PlaywrightManager.isDownloading.collectAsState()
-    val systemBrowser by PlaywrightManager.systemBrowser.collectAsState()
+    val systemBrowserChannel by PlaywrightManager.systemBrowserChannel.collectAsState()
+    val systemBrowserType by PlaywrightManager.systemBrowserType.collectAsState()
+    val systemBrowserExecutable by PlaywrightManager.systemBrowserExecutable.collectAsState()
     val isBrowserDownloaded by PlaywrightManager.isDownloaded.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState())) {
@@ -339,9 +341,17 @@ fun SettingsAdvanced() {
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    val browserLabel = when (systemBrowserChannel) {
+                        "msedge" -> "Edge"
+                        "chrome" -> "Chrome"
+                        else -> when (systemBrowserType) {
+                            "firefox" -> "Firefox"
+                            else -> "Chromium"
+                        }
+                    }
                     val statusText = when {
-                        systemBrowser == "msedge" -> "Status: System Edge Detected (0MB)"
-                        systemBrowser == "chrome" -> "Status: System Chrome Detected (0MB)"
+                        systemBrowserChannel != null -> "Status: System $browserLabel Detected (0MB)"
+                        systemBrowserExecutable != null -> "Status: System ${systemBrowserType.replaceFirstChar { it.uppercase() }} Detected (0MB)"
                         isBrowserDownloaded -> "Status: Isolated Browser Downloaded (~300MB)"
                         else -> "Status: Not Installed"
                     }
@@ -362,7 +372,7 @@ fun SettingsAdvanced() {
                         ) {
                             Text("Remove Binaries (~300MB)", color = MaterialTheme.colorScheme.onError)
                         }
-                    } else if (systemBrowser == null) {
+                    } else if (systemBrowserChannel == null && systemBrowserExecutable == null) {
                         Button(
                             onClick = {
                                 scope.launch {

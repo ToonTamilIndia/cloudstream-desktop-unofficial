@@ -32,8 +32,14 @@ object PlaywrightManager {
     private val _isDownloaded = MutableStateFlow(false)
     val isDownloaded = _isDownloaded.asStateFlow()
 
-    private val _systemBrowser = MutableStateFlow<String?>(null)
-    val systemBrowser = _systemBrowser.asStateFlow()
+    private val _systemBrowserType = MutableStateFlow("chromium")
+    val systemBrowserType = _systemBrowserType.asStateFlow()
+
+    private val _systemBrowserChannel = MutableStateFlow<String?>(null)
+    val systemBrowserChannel = _systemBrowserChannel.asStateFlow()
+
+    private val _systemBrowserExecutable = MutableStateFlow<String?>(null)
+    val systemBrowserExecutable = _systemBrowserExecutable.asStateFlow()
 
     init {
         checkInstalled()
@@ -44,62 +50,104 @@ object PlaywrightManager {
         val isWindows = osName.contains("win")
         val isMac = osName.contains("mac")
 
-        val edgePaths = mutableListOf<File>()
-        val chromePaths = mutableListOf<File>()
+        data class DetectedBrowser(
+            val channel: String?,   // non-null for branded Chrome/Edge
+            val executable: String, // path to the binary
+            val browserType: String, // "chromium" or "firefox"
+        )
+
+        val browsers = mutableListOf<DetectedBrowser>()
+
+        fun addIfExists(cmd: String, channel: String?, browserType: String) {
+            val path = try {
+                Runtime.getRuntime().exec(arrayOf("which", cmd)).inputStream.bufferedReader().readText().trim()
+            } catch (_: Exception) { "" }
+            if (path.isNotEmpty() && File(path).exists()) {
+                browsers.add(DetectedBrowser(channel, path, browserType))
+            }
+        }
+
+        fun addHardcoded(path: String, channel: String?, browserType: String) {
+            val f = File(path)
+            if (f.exists()) {
+                browsers.add(DetectedBrowser(channel, f.absolutePath, browserType))
+            }
+        }
 
         if (isWindows) {
             val progFiles = System.getenv("ProgramFiles") ?: "C:\\Program Files"
             val progFiles86 = System.getenv("ProgramFiles(x86)") ?: "C:\\Program Files (x86)"
             val localAppData = System.getenv("LOCALAPPDATA") ?: "C:\\Users\\Default\\AppData\\Local"
 
-            edgePaths.add(File("$progFiles86\\Microsoft\\Edge\\Application\\msedge.exe"))
-            edgePaths.add(File("$progFiles\\Microsoft\\Edge\\Application\\msedge.exe"))
-
-            chromePaths.add(File("$progFiles\\Google\\Chrome\\Application\\chrome.exe"))
-            chromePaths.add(File("$progFiles86\\Google\\Chrome\\Application\\chrome.exe"))
-            chromePaths.add(File("$localAppData\\Google\\Chrome\\Application\\chrome.exe"))
+            addHardcoded("$progFiles86\\Microsoft\\Edge\\Application\\msedge.exe", "msedge", "chromium")
+            addHardcoded("$progFiles\\Microsoft\\Edge\\Application\\msedge.exe", "msedge", "chromium")
+            addHardcoded("$progFiles\\Google\\Chrome\\Application\\chrome.exe", "chrome", "chromium")
+            addHardcoded("$progFiles86\\Google\\Chrome\\Application\\chrome.exe", "chrome", "chromium")
+            addHardcoded("$localAppData\\Google\\Chrome\\Application\\chrome.exe", "chrome", "chromium")
         } else if (isMac) {
-            edgePaths.add(File("/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"))
-            chromePaths.add(File("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"))
+            addHardcoded("/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge", "msedge", "chromium")
+            addHardcoded("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "chrome", "chromium")
+            addIfExists("firefox", null, "firefox")
+            addIfExists("firefox-developer-edition", null, "firefox")
+            addIfExists("firefox-nightly", null, "firefox")
+            addIfExists("brave-browser", null, "chromium")
         } else {
-            // Linux — use `which` for PATH-based detection, plus common snapshot/flatpak paths
-            val searchCommands = listOf("microsoft-edge-stable", "microsoft-edge", "google-chrome-stable", "google-chrome", "chromium-browser", "chromium")
-            for (cmd in searchCommands) {
-                val path = try {
-                    Runtime.getRuntime().exec(arrayOf("which", cmd)).inputStream.bufferedReader().readText().trim()
-                } catch (_: Exception) { "" }
-                if (path.isNotEmpty()) {
-                    val f = File(path)
-                    if (f.exists()) {
-                        if (cmd.startsWith("microsoft-edge")) edgePaths.add(f)
-                        else chromePaths.add(f)
-                    }
-                }
+            // Linux — which-based detection
+            val whichCommands = listOf(
+                "microsoft-edge-stable" to "msedge" to "chromium",
+                "microsoft-edge" to "msedge" to "chromium",
+                "google-chrome-stable" to "chrome" to "chromium",
+                "google-chrome" to "chrome" to "chromium",
+                "chromium-browser" to null to "chromium",
+                "chromium" to null to "chromium",
+                "brave-browser" to null to "chromium",
+                "brave" to null to "chromium",
+                "firefox" to null to "firefox",
+                "firefox-developer-edition" to null to "firefox",
+                "firefox-nightly" to null to "firefox",
+            )
+            for ((cmd, channel, browserType) in whichCommands) {
+                addIfExists(cmd, channel, browserType)
             }
-            // Also check common hardcoded paths
-            edgePaths.add(File("/usr/bin/microsoft-edge-stable"))
-            edgePaths.add(File("/usr/bin/microsoft-edge"))
-            chromePaths.add(File("/usr/bin/google-chrome-stable"))
-            chromePaths.add(File("/usr/bin/google-chrome"))
-            chromePaths.add(File("/usr/bin/chromium-browser"))
-            chromePaths.add(File("/usr/bin/chromium"))
-            // Snap packages
-            chromePaths.add(File("/snap/bin/chromium"))
-            chromePaths.add(File("/snap/bin/google-chrome-stable"))
-            // Flatpak
-            chromePaths.add(File("/var/lib/flatpak/exports/bin/com.google.Chrome"))
-            chromePaths.add(File("/var/lib/flatpak/exports/bin/com.microsoft.Edge"))
-            edgePaths.add(File("/var/lib/flatpak/exports/bin/com.microsoft.Edge"))
+
+            // Hardcoded paths
+            addHardcoded("/usr/bin/microsoft-edge-stable", "msedge", "chromium")
+            addHardcoded("/usr/bin/microsoft-edge", "msedge", "chromium")
+            addHardcoded("/usr/bin/google-chrome-stable", "chrome", "chromium")
+            addHardcoded("/usr/bin/google-chrome", "chrome", "chromium")
+            addHardcoded("/usr/bin/chromium-browser", null, "chromium")
+            addHardcoded("/usr/bin/chromium", null, "chromium")
+            addHardcoded("/usr/bin/brave-browser", null, "chromium")
+            addHardcoded("/usr/bin/firefox", null, "firefox")
+            addHardcoded("/snap/bin/chromium", null, "chromium")
+            addHardcoded("/snap/bin/google-chrome-stable", "chrome", "chromium")
+            addHardcoded("/snap/bin/firefox", null, "firefox")
+            addHardcoded("/var/lib/flatpak/exports/bin/com.google.Chrome", "chrome", "chromium")
+            addHardcoded("/var/lib/flatpak/exports/bin/com.microsoft.Edge", "msedge", "chromium")
+            addHardcoded("/var/lib/flatpak/exports/bin/org.mozilla.firefox", null, "firefox")
+            addHardcoded("/var/lib/flatpak/exports/bin/com.brave.Browser", null, "chromium")
         }
 
-        when {
-            edgePaths.any { it.exists() } -> _systemBrowser.value = "msedge"
-            chromePaths.any { it.exists() } -> _systemBrowser.value = "chrome"
-            else -> _systemBrowser.value = null
+        // Priority: Edge > Chrome > Chromium > Brave > Firefox
+        val order = listOf("msedge", "chrome", null)
+        val selected = browsers.minByOrNull {
+            val channel = it.channel
+            val idx = order.indexOf(channel)
+            if (idx >= 0) idx else order.size
+        }
+
+        if (selected != null) {
+            _systemBrowserChannel.value = selected.channel
+            _systemBrowserExecutable.value = selected.executable
+            _systemBrowserType.value = selected.browserType
+        } else {
+            _systemBrowserChannel.value = null
+            _systemBrowserExecutable.value = null
+            _systemBrowserType.value = "chromium"
         }
 
         _isDownloaded.value = playwrightPath.exists() && (playwrightPath.listFiles()?.isNotEmpty() == true)
-        _isInstalled.value = _systemBrowser.value != null || _isDownloaded.value
+        _isInstalled.value = _systemBrowserChannel.value != null || _systemBrowserExecutable.value != null || _isDownloaded.value
     }
 
     suspend fun downloadBrowser() = withContext(Dispatchers.IO) {
@@ -107,12 +155,9 @@ object PlaywrightManager {
 
         _isDownloading.value = true
         try {
-            // Tell Playwright where to download the browsers
             val env = mapOf("PLAYWRIGHT_BROWSERS_PATH" to playwrightPath.absolutePath)
             val options = Playwright.CreateOptions().setEnv(env)
 
-            // This will block and download Chromium (and other bundled browsers).
-            // It downloads them to the specified PLAYWRIGHT_BROWSERS_PATH.
             val playwright = Playwright.create(options)
             playwright.close()
 
@@ -134,8 +179,7 @@ object PlaywrightManager {
     fun getEnvOptions(): Playwright.CreateOptions {
         val env = mutableMapOf("PLAYWRIGHT_BROWSERS_PATH" to playwrightPath.absolutePath)
 
-        // Skip massive Playwright browser downloads if we already have Edge/Chrome installed
-        if (_systemBrowser.value != null) {
+        if (_systemBrowserChannel.value != null || _systemBrowserExecutable.value != null) {
             env["PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD"] = "1"
         }
 
@@ -148,7 +192,6 @@ object PlaywrightManager {
     suspend fun getBrowser(): com.microsoft.playwright.Browser = withContext(Dispatchers.IO) {
         val b = browser
         if (b == null || !b.isConnected) {
-            // Clean up old instances
             try {
                 browser?.close()
             } catch (_: Exception) {}
@@ -157,18 +200,34 @@ object PlaywrightManager {
             } catch (_: Exception) {}
 
             playwright = Playwright.create(getEnvOptions())
+
+            val channel = _systemBrowserChannel.value
+            val executable = _systemBrowserExecutable.value
+            val type = _systemBrowserType.value
+
             val launchOptions = com.microsoft.playwright.BrowserType.LaunchOptions()
                 .setHeadless(true)
-                .setIgnoreDefaultArgs(listOf("--enable-automation"))
-                .setArgs(
-                    listOf(
-                        "--disable-blink-features=AutomationControlled",
-                        "--disable-dev-shm-usage",
-                        "--disable-gpu",
-                    ),
-                )
-            systemBrowser.value?.let { launchOptions.setChannel(it) }
-            browser = playwright!!.chromium().launch(launchOptions)
+
+            if (type == "chromium") {
+                launchOptions
+                    .setIgnoreDefaultArgs(listOf("--enable-automation"))
+                    .setArgs(
+                        listOf(
+                            "--disable-blink-features=AutomationControlled",
+                            "--disable-dev-shm-usage",
+                            "--disable-gpu",
+                        ),
+                    )
+                if (channel != null) {
+                    launchOptions.setChannel(channel)
+                } else {
+                    executable?.let { launchOptions.setExecutablePath(it) }
+                }
+                browser = playwright!!.chromium().launch(launchOptions)
+            } else {
+                executable?.let { launchOptions.setExecutablePath(it) }
+                browser = playwright!!.firefox().launch(launchOptions)
+            }
         }
         return@withContext browser!!
     }
