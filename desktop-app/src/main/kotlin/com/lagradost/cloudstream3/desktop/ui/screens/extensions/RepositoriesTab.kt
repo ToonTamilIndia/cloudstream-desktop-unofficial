@@ -96,7 +96,7 @@ fun RepositoriesTab(viewModel: ExtensionsViewModel) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            items(repos, key = { it.url }) { repo ->
+            items(repos, key = { "${it.url}|${it.name}" }) { repo ->
                 Card(
                     modifier = Modifier.fillMaxWidth().height(90.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),

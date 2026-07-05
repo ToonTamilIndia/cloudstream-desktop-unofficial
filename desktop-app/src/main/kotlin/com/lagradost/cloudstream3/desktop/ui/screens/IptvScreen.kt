@@ -135,7 +135,7 @@ fun ComposeIptvScreen() {
                             modifier = Modifier.padding(vertical = 8.dp),
                         )
                     }
-                    items(groupChannels, key = { it.url }) { channel ->
+                    items(groupChannels, key = { "${it.url}|${it.name}" }) { channel ->
                         IptvChannelCard(
                             channel = channel,
                             onPlay = {
