@@ -76,6 +76,22 @@ dependencies {
     implementation(compose.foundation)
     implementation("dev.chrisbanes.haze:haze:0.7.3")
 
+    // Embedded browser used by the in-window JW Player backend.
+    val javafxVersion = "21.0.2"
+    val javafxPlatform = when {
+        System.getProperty("os.name").lowercase().contains("win") -> "win"
+        System.getProperty("os.name").lowercase().contains("mac") &&
+            System.getProperty("os.arch").lowercase().contains("aarch64") -> "mac-aarch64"
+        System.getProperty("os.name").lowercase().contains("mac") -> "mac"
+        System.getProperty("os.arch").lowercase().contains("aarch64") -> "linux-aarch64"
+        else -> "linux"
+    }
+    implementation("org.openjfx:javafx-base:$javafxVersion:$javafxPlatform")
+    implementation("org.openjfx:javafx-graphics:$javafxVersion:$javafxPlatform")
+    implementation("org.openjfx:javafx-controls:$javafxVersion:$javafxPlatform")
+    implementation("org.openjfx:javafx-swing:$javafxVersion:$javafxPlatform")
+    implementation("org.openjfx:javafx-web:$javafxVersion:$javafxPlatform")
+
     // Image loading
     implementation("io.coil-kt.coil3:coil-compose:3.0.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.0.0")
@@ -150,8 +166,6 @@ compose.desktop {
         mainClass = "com.lagradost.cloudstream3.desktop.MainKt"
         jvmArgs += listOf(
             "-Djava.security.manager=allow",
-            // Force GTK2 for AWT to avoid libfreetype rendering crashes on some Linux distros
-            "-Djdk.gtk.version=2",
         )
 
         buildTypes.release.proguard {

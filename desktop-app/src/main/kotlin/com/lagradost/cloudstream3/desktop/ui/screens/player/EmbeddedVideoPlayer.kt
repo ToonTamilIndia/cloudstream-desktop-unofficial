@@ -12,7 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPlacement
-import com.lagradost.cloudstream3.desktop.player.ComposeMpvPlayer
+import com.lagradost.cloudstream3.desktop.player.ComposeJwPlayer
 import com.lagradost.cloudstream3.desktop.ui.LocalWindowState
 import com.lagradost.cloudstream3.desktop.ui.VideoLaunchData
 import com.lagradost.common.storage.DesktopDataStore
@@ -96,7 +96,7 @@ fun EmbeddedVideoPlayer(
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     key(currentLinkIndex) {
-                        ComposeMpvPlayer(
+                        ComposeJwPlayer(
                             modifier = if (isLoading) Modifier.size(1.dp) else Modifier.fillMaxSize(),
                             link = launchData.links[currentLinkIndex],
                             title = launchData.title,

@@ -156,6 +156,7 @@ object LocalStreamProxy {
         url: String,
         session: ProxySession,
     ) {
+        call.response.header("Access-Control-Allow-Origin", "*")
         val headers = session.headers.toMutableMap().apply {
             keys.filter { it.equals("Accept-Encoding", true) }.forEach { remove(it) }
             call.request.headers["Range"]?.let { put("Range", it) }
@@ -186,6 +187,7 @@ object LocalStreamProxy {
 
     private suspend fun handleRequest(call: io.ktor.server.application.ApplicationCall) {
         try {
+            call.response.header("Access-Control-Allow-Origin", "*")
             val sessionId = call.request.queryParameters["s"]
             val encodedUrl = call.request.queryParameters["u"]
 
