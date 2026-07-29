@@ -17,6 +17,9 @@ desktop-app/appResources/
 *.jar
 *.cs3
 
+# Node.js
+node_modules/
+
 # Exceptions
 !gradle/wrapper/gradle-wrapper.jar
 

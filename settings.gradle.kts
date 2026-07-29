@@ -38,3 +38,6 @@ project(":desktop-app").projectDir = file("desktop-app")
 
 include(":sandbox")
 project(":sandbox").projectDir = file("plugin-sandbox")
+
+include(":server-app")
+project(":server-app").projectDir = file("server-app")

@@ -2,8 +2,8 @@ package com.lagradost.player.impl.proxy
 
 import com.lagradost.cloudstream3.app
 import com.lagradost.common.logging.AppLogger
-import io.ktor.http.ContentType
-import io.ktor.http.HttpStatusCode
+import io.ktor.http.*
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
@@ -12,7 +12,9 @@ import io.ktor.server.request.queryString
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondBytesWriter
+import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
+import io.ktor.server.routing.options
 import io.ktor.server.routing.routing
 import io.ktor.utils.io.writeFully
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -48,6 +50,13 @@ suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation 
 }
 
 object LocalStreamProxy {
+    private fun ApplicationCall.corsHeaders() {
+        val origin = request.headers["Origin"] ?: "*"
+        response.header("Access-Control-Allow-Origin", origin)
+        response.header("Access-Control-Allow-Credentials", "true")
+        response.header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        response.header("Access-Control-Allow-Headers", "Content-Type, Range, Authorization, Origin")
+    }
     // Use Kotlin's dynamically scaling IO dispatcher instead of hoarding 500 OS threads
     private val ProxyIoDispatcher = kotlinx.coroutines.Dispatchers.IO
 
@@ -96,10 +105,18 @@ object LocalStreamProxy {
 
     fun start() {
         if (server != null) return
-        server = embeddedServer(Netty, port = 0, host = "127.0.0.1") {
+        server = embeddedServer(Netty, port = 0, host = "0.0.0.0") {
             routing {
+                options("/proxy") {
+                    call.corsHeaders()
+                    call.respond(HttpStatusCode.OK)
+                }
                 get("/proxy") {
                     handleRequest(call)
+                }
+                options("/dash/{s}/{b}/{path...}") {
+                    call.corsHeaders()
+                    call.respond(HttpStatusCode.OK)
                 }
                 get("/dash/{s}/{b}/{path...}") {
                     handleDashResource(call)
@@ -125,15 +142,17 @@ object LocalStreamProxy {
         return sessionId
     }
 
+    fun getSession(sessionId: String): ProxySession? = sessions[sessionId]
+
     fun buildProxyUrl(sessionId: String, url: String): String {
         val encodedUrl = Base64.getUrlEncoder().withoutPadding().encodeToString(url.toByteArray(Charsets.UTF_8))
-        return "http://127.0.0.1:$port/proxy?s=$sessionId&u=$encodedUrl"
+        return "http://localhost:$port/proxy?s=$sessionId&u=$encodedUrl"
     }
 
     private fun buildDashBaseUrl(sessionId: String, baseUrl: String): String {
         val encodedBase = Base64.getUrlEncoder().withoutPadding()
             .encodeToString(baseUrl.toByteArray(Charsets.UTF_8))
-        return "http://127.0.0.1:$port/dash/$sessionId/$encodedBase/"
+        return "http://localhost:$port/dash/$sessionId/$encodedBase/"
     }
 
     private suspend fun handleDashResource(call: io.ktor.server.application.ApplicationCall) {
@@ -156,7 +175,7 @@ object LocalStreamProxy {
         url: String,
         session: ProxySession,
     ) {
-        call.response.header("Access-Control-Allow-Origin", "*")
+        call.corsHeaders()
         val headers = session.headers.toMutableMap().apply {
             keys.filter { it.equals("Accept-Encoding", true) }.forEach { remove(it) }
             call.request.headers["Range"]?.let { put("Range", it) }
@@ -187,7 +206,7 @@ object LocalStreamProxy {
 
     private suspend fun handleRequest(call: io.ktor.server.application.ApplicationCall) {
         try {
-            call.response.header("Access-Control-Allow-Origin", "*")
+            call.corsHeaders()
             val sessionId = call.request.queryParameters["s"]
             val encodedUrl = call.request.queryParameters["u"]
 
@@ -227,8 +246,8 @@ object LocalStreamProxy {
 
             if (!response.isSuccessful) {
                 AppLogger.e("LocalStreamProxy Request Failed! Code: ${response.code} URL: $url")
-                response.body?.close()
-                call.respond(HttpStatusCode.fromValue(response.code))
+                val errorBody = response.body?.string() ?: response.message
+                call.respondText(errorBody, ContentType.Text.Plain, HttpStatusCode.fromValue(response.code))
                 return
             }
 

@@ -124,9 +124,7 @@ class HomeViewModel(private val coroutineScope: CoroutineScope) {
         }
         if (selectedProviderName.value == null && currentProviders.isNotEmpty()) {
             val restored = currentProviders.firstOrNull { it.name == DesktopDataStore.getKey<String>(PREF_SELECTED_PROVIDER) }
-            if (restored != null) {
-                selectedProviderName.value = restored.name
-            }
+            selectedProviderName.value = (restored ?: currentProviders.first()).name
         }
     }
 

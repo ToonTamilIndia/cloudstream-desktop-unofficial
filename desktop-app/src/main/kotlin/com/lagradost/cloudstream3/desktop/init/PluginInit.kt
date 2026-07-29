@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
  */
 fun initProviders() {
     val builtIns = listOf(
-        TmdbProvider(),
+        TmdbProvider().apply { name = "TMDB" },
         TraktProvider(),
         CrossTmdbProvider(),
     )
