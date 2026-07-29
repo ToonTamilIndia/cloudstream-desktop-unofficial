@@ -19,6 +19,7 @@ desktop-app/appResources/
 
 # Node.js
 node_modules/
+webui/dist/
 
 # Exceptions
 !gradle/wrapper/gradle-wrapper.jar
