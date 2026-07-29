@@ -15,6 +15,7 @@ import {
   Snackbar,
 } from '@mui/material'
 import { api } from '../api/client'
+import { useApi } from '../hooks/useApi'
 import { desktopTheme } from '../theme/theme'
 
 type TabValue = 'appearance' | 'network' | 'advanced' | 'about'
@@ -26,16 +27,13 @@ export default function SettingsScreen() {
   const [imageCacheSize, setImageCacheSize] = useState('Calculating...')
   const [saveSnackbar, setSaveSnackbar] = useState(false)
 
-  const loadSettings = () => {
-    api.get('/api/settings').then((res: any) => {
-      setGlobalSearch(res.global_search_enabled ?? false)
-      setDohProvider(res.doh_provider ?? 0)
-    }).catch(() => {})
-  }
-
+  const { data: settings } = useApi(() => api.get<any>('/api/settings'), [])
   useEffect(() => {
-    loadSettings()
-  }, [])
+    if (settings) {
+      setGlobalSearch(settings.global_search_enabled ?? false)
+      setDohProvider(settings.doh_provider ?? 0)
+    }
+  }, [settings])
 
   const toggleGlobalSearch = () => {
     const next = !globalSearch
@@ -173,7 +171,7 @@ export default function SettingsScreen() {
                 </Button>
                 <Button
                   variant="outlined"
-                  onClick={loadSettings}
+                  onClick={() => {}}
                   sx={{ borderColor: desktopTheme.divider, color: desktopTheme.textPrimary }}
                 >
                   Refresh

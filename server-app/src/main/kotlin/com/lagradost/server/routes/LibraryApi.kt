@@ -1,8 +1,8 @@
 package com.lagradost.server.routes
 
-import com.lagradost.common.storage.DesktopDataStore
 import com.lagradost.common.storage.DesktopBookmark
-import com.lagradost.common.storage.WatchHistory
+import com.lagradost.common.storage.BookmarkRepository
+import com.lagradost.common.storage.WatchHistoryRepository
 import com.lagradost.server.utils.respondJson
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -25,8 +25,8 @@ data class LibraryItem(
 fun Route.registerLibraryRoutes() {
     get("/api/library") {
         try {
-            val bookmarks = DesktopDataStore.getBookmarks()
-            val watchHistory = DesktopDataStore.getAllWatchHistory()
+            val bookmarks = BookmarkRepository.getAll()
+            val watchHistory = WatchHistoryRepository.getAll()
             val historyMap = watchHistory.groupBy { it.parentId }
 
             val items = bookmarks.map { bm ->
@@ -55,9 +55,9 @@ fun Route.registerLibraryRoutes() {
     get("/api/library/{id}") {
         val id = call.parameters["id"]
         try {
-            val bm = DesktopDataStore.getBookmarks().find { it.id == id }
+            val bm = BookmarkRepository.getAll().find { it.id == id }
             if (bm != null) {
-                val history = DesktopDataStore.getAllWatchHistory()
+                val history = WatchHistoryRepository.getAll()
                     .filter { it.parentId == id }
                     .maxByOrNull { it.updateTime }
                 call.respondJson(mapOf(
@@ -100,7 +100,7 @@ fun Route.registerLibraryRoutes() {
             val posterUrl = json.optString("posterUrl", "").ifEmpty { null }
 
             if (id.isNotBlank() && name.isNotBlank()) {
-                DesktopDataStore.addBookmark(
+                BookmarkRepository.add(
                     DesktopBookmark(
                         id = id,
                         name = name,
@@ -120,7 +120,7 @@ fun Route.registerLibraryRoutes() {
     delete("/api/library/{id}") {
         val id = call.parameters["id"]
         if (id != null) {
-            DesktopDataStore.removeBookmark(id)
+            BookmarkRepository.remove(id)
         }
         call.respondJson(mapOf("status" to "ok", "message" to "Library item deleted"))
     }

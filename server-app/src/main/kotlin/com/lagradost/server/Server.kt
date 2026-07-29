@@ -63,7 +63,6 @@ fun main(args: Array<String>) {
             registerLinksRoutes()
             registerLibraryRoutes()
             registerPluginsRoutes()
-            registerPlayerRoutes()
             registerSettingsRoutes()
             registerIptvRoutes()
 

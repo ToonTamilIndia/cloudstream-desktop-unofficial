@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
   Box,
@@ -21,10 +21,10 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import { api } from '../api/client'
+import { useApi, useApiLazy } from '../hooks/useApi'
 import EpisodeCard from '../components/EpisodeCard'
 import CategoryRow from '../components/CategoryRow'
 import type {
-  DetailsResponse,
   EpisodeData,
   EpisodeResponse,
   LinksResponse,
@@ -41,30 +41,20 @@ export default function DetailsScreen() {
   const url = searchParams.get('url') || ''
   const apiName = searchParams.get('api') || ''
 
-  const [details, setDetails] = useState<DetailsResponse | null>(null)
-  const [episodeData, setEpisodeData] = useState<EpisodeResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { data: details, loading } = useApi(
+    () => api.details(url, apiName),
+    [url, apiName],
+  )
+  const { data: episodeResponse } = useApi(
+    () => (details && SERIES_TYPES.includes(details.type) ? api.episodes(url, apiName) : Promise.resolve(null as any)),
+    [url, apiName, details?.type],
+  )
+  const episodeData: EpisodeResponse | null = episodeResponse
   const [season, setSeason] = useState(0)
 
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
-  const [linksLoading, setLinksLoading] = useState(false)
-  const [currentLinks, setCurrentLinks] = useState<LinksResponse | null>(null)
+  const [fetchLinks, { data: currentLinks, loading: linksLoading }] = useApiLazy<LinksResponse>()
   const [selectedEpisode, setSelectedEpisode] = useState<EpisodeData | null>(null)
-
-  useEffect(() => {
-    if (!url || !apiName) return
-    setLoading(true)
-    api.details(url, apiName).then((d: DetailsResponse) => {
-      setDetails(d)
-      setLoading(false)
-
-      if (SERIES_TYPES.includes(d.type)) {
-        api.episodes(url, apiName).then((ep: EpisodeResponse) => {
-          setEpisodeData(ep)
-        }).catch(() => {})
-      }
-    }).catch(() => setLoading(false))
-  }, [url, apiName])
 
   const filteredEpisodes: EpisodeData[] = episodeData
     ? episodeData.episodes.filter((e) => e.season == null || e.season === season)
@@ -76,18 +66,11 @@ export default function DetailsScreen() {
   })
   const seasonList = Array.from(seasons).sort((a, b) => a - b)
 
-  const handleEpisodeClick = useCallback(async (ep: EpisodeData) => {
+  const handleEpisodeClick = useCallback((ep: EpisodeData) => {
     setSelectedEpisode(ep)
-    setLinksLoading(true)
     setLinkDialogOpen(true)
-    try {
-      const links = await api.links(ep.data, url, apiName)
-      setCurrentLinks(links)
-    } catch {
-      setCurrentLinks(null)
-    }
-    setLinksLoading(false)
-  }, [url])
+    fetchLinks(() => api.links(ep.data, url, apiName))
+  }, [url, fetchLinks])
 
   const handlePlayLink = useCallback((link: LinkResult) => {
     const playUrl = link.proxyUrl || link.url
@@ -399,7 +382,7 @@ export default function DetailsScreen() {
 
       <Dialog
         open={linkDialogOpen}
-        onClose={() => { setLinkDialogOpen(false); setCurrentLinks(null) }}
+        onClose={() => setLinkDialogOpen(false)}
         maxWidth="sm"
         fullWidth
         PaperProps={{

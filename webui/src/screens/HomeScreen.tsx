@@ -17,6 +17,7 @@ import {
 } from '@mui/material'
 import SearchIcon from '@mui/icons-material/Search'
 import { api } from '../api/client'
+import { useApi } from '../hooks/useApi'
 import CategoryRow from '../components/CategoryRow'
 import type { SourceInfo, SearchResultItem, MainPageResponse } from '../types'
 import { desktopTheme } from '../theme/theme'
@@ -28,42 +29,25 @@ interface MainPageCategory {
 
 export default function HomeScreen() {
   const navigate = useNavigate()
-  const [sources, setSources] = useState<SourceInfo[]>([])
-  const [categories, setCategories] = useState<MainPageCategory[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Map<string, SearchResultItem[]>>(new Map())
   const [searching, setSearching] = useState(false)
   const [selectedSource, setSelectedSource] = useState<string | null>(null)
   const [sourceDialogOpen, setSourceDialogOpen] = useState(false)
 
+  const { data: sourcesData } = useApi(() => api.sources(), [])
+  const sources: SourceInfo[] = (sourcesData as any)?.sources || []
   useEffect(() => {
-    api.sources().then((res: { sources: SourceInfo[] }) => {
-      setSources(res.sources)
-      if (res.sources.length > 0 && !selectedSource) setSelectedSource(res.sources[0].name)
-    })
-  }, [])
+    if (sources.length > 0 && !selectedSource) setSelectedSource(sources[0].name)
+  }, [sources])
 
-  useEffect(() => {
-    if (!selectedSource) return
-    const src = sources.find((s) => s.name === selectedSource)
-    if (!src || !src.hasMainPage) {
-      setCategories([])
-      return
-    }
-    api
-      .mainpage(selectedSource)
-      .then((res: MainPageResponse) => {
-        setCategories(
-          res.categories.map((c) => ({
-            title: c.name,
-            items: c.items,
-          }))
-        )
-      })
-      .catch(() => {
-        setCategories([])
-      })
-  }, [selectedSource, sources])
+  const { data: mainPageData } = useApi(
+    () => selectedSource ? api.mainpage(selectedSource) : Promise.resolve(null as any),
+    [selectedSource],
+  )
+  const categories: MainPageCategory[] = mainPageData
+    ? (mainPageData as MainPageResponse).categories.map((c: any) => ({ title: c.name, items: c.items }))
+    : []
 
   useEffect(() => {
     if (!searchQuery.trim()) {
