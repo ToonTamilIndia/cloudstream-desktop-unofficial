@@ -15,6 +15,7 @@ export interface SearchResultItem {
   type?: string
   displayType?: string
   posterUrl?: string
+  posterHeaders?: Record<string, string>
   id?: number
   quality?: string
   score?: string
@@ -26,6 +27,11 @@ export interface SearchResponse {
   hasNext: boolean
   query: string
   page: number
+}
+
+export interface AudioTrackResult {
+  url: string
+  headers?: Record<string, string>
 }
 
 export interface LinkResult {
@@ -41,6 +47,7 @@ export interface LinkResult {
   drmKey?: string
   drmUuid?: string
   drmLicenseUrl?: string
+  audioTracks?: AudioTrackResult[]
 }
 
 export interface SubtitleResult {
@@ -66,6 +73,8 @@ export interface ActorData {
 export interface TrailerData {
   url: string
   type: string
+  headers?: Record<string, string>
+  referer?: string
 }
 
 export interface EpisodeData {
@@ -92,6 +101,7 @@ export interface DetailsResponse {
   type: string
   displayType?: string
   posterUrl?: string
+  posterHeaders?: Record<string, string>
   year?: number
   plot?: string
   score?: string
@@ -106,6 +116,8 @@ export interface DetailsResponse {
   trailers?: TrailerData[]
   episodes?: EpisodeData[]
   dubEpisodes?: Record<string, number>
+  showStatus?: string
+  uniqueUrl?: string
 }
 
 export interface LibraryItem {

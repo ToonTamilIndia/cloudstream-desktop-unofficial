@@ -204,6 +204,8 @@ export default function DetailsScreen() {
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
             {details.type && <Chip label={details.displayType || details.type} size="small" sx={{ bgcolor: `${desktopTheme.accent}30`, color: desktopTheme.accent, fontWeight: 600 }} />}
+            {details.showStatus && <Chip label={details.showStatus} size="small" variant="outlined" sx={{ color: desktopTheme.textMuted, borderColor: desktopTheme.divider }} />}
+            {details.contentRating && <Chip label={details.contentRating} size="small" variant="outlined" sx={{ color: desktopTheme.textMuted, borderColor: desktopTheme.divider }} />}
             {details.year && <Typography variant="body2">{details.year}</Typography>}
             {details.duration && <Typography variant="body2">· {details.duration}m</Typography>}
             {details.score && (
@@ -211,6 +213,11 @@ export default function DetailsScreen() {
                 <Rating value={parseFloat(details.score) / 2} precision={0.5} readOnly size="small" sx={{ color: desktopTheme.accent }} />
                 <Typography variant="body2">{details.score}</Typography>
               </Box>
+            )}
+            {details.dubEpisodes && Object.keys(details.dubEpisodes).length > 0 && (
+              <Typography variant="body2" sx={{ color: desktopTheme.textMuted }}>
+                · {Object.entries(details.dubEpisodes).map(([k, v]) => `${k}: ${v}ep`).join(', ')}
+              </Typography>
             )}
           </Box>
         </Box>

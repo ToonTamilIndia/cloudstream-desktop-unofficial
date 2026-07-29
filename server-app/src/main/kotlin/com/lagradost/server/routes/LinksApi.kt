@@ -30,6 +30,12 @@ data class LinkResult(
     val drmKey: String? = null,
     val drmUuid: String? = null,
     val drmLicenseUrl: String? = null,
+    val audioTracks: List<AudioTrackResult>? = null,
+)
+
+data class AudioTrackResult(
+    val url: String,
+    val headers: Map<String, String>? = null,
 )
 
 data class SubtitleResult(
@@ -148,6 +154,12 @@ fun Route.registerLinksRoutes() {
                                             drmKey = drm?.key,
                                             drmUuid = drm?.uuid?.toString(),
                                             drmLicenseUrl = drm?.licenseUrl,
+                                            audioTracks = link.audioTracks.takeIf { it.isNotEmpty() }?.map { track ->
+                                                AudioTrackResult(
+                                                    url = track.url,
+                                                    headers = track.headers
+                                                )
+                                            }
                                         )
                                     )
                                 }
@@ -302,6 +314,12 @@ fun Route.registerLinksRoutes() {
                                                 drmKey = drm?.key,
                                                 drmUuid = drm?.uuid?.toString(),
                                                 drmLicenseUrl = drm?.licenseUrl,
+                                                audioTracks = link.audioTracks.takeIf { it.isNotEmpty() }?.map { track ->
+                                                    AudioTrackResult(
+                                                        url = track.url,
+                                                        headers = track.headers
+                                                    )
+                                                }
                                             )
                                         )
                                     }

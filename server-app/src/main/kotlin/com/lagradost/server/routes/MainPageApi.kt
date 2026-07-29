@@ -56,6 +56,7 @@ fun Route.registerMainPageRoutes() {
                                             "type" to result.type?.name,
                                             "displayType" to typeToDisplayName(result.type),
                                             "posterUrl" to api.fixUrlNull(result.posterUrl),
+                                            "posterHeaders" to result.posterHeaders,
                                             "id" to result.id,
                                             "quality" to result.quality?.name,
                                             "score" to result.score?.toString(),

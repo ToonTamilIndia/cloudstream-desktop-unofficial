@@ -15,6 +15,7 @@ data class DetailsResponse(
     val type: String,
     val displayType: String?,
     val posterUrl: String?,
+    val posterHeaders: Map<String, String>? = null,
     val year: Int?,
     val plot: String?,
     val score: String?,
@@ -28,7 +29,9 @@ data class DetailsResponse(
     val contentRating: String?,
     val trailers: List<TrailerData>?,
     val episodes: List<EpisodeData>?,
-    val dubEpisodes: Map<String, Int>?
+    val dubEpisodes: Map<String, Int>?,
+    val showStatus: String? = null,
+    val uniqueUrl: String? = null
 )
 
 data class ActorData(
@@ -39,7 +42,9 @@ data class ActorData(
 
 data class TrailerData(
     val url: String,
-    val type: String
+    val type: String,
+    val headers: Map<String, String>? = null,
+    val referer: String? = null
 )
 
 data class EpisodeData(
@@ -96,6 +101,7 @@ fun Route.registerDetailsRoutes() {
                 type = response.type.name,
                 displayType = displayType,
                 posterUrl = api.fixUrlNull(response.posterUrl),
+                posterHeaders = response.posterHeaders,
                 year = response.year,
                 plot = response.plot,
                 score = response.score?.toString(),
@@ -109,6 +115,7 @@ fun Route.registerDetailsRoutes() {
                         type = it.type?.name,
                         displayType = typeToDisplayName(it.type),
                         posterUrl = api.fixUrlNull(it.posterUrl),
+                        posterHeaders = it.posterHeaders,
                         id = it.id,
                         quality = it.quality?.name,
                         score = it.score?.toString(),
@@ -129,9 +136,14 @@ fun Route.registerDetailsRoutes() {
                 trailers = response.trailers.map { trailer ->
                     TrailerData(
                         url = trailer.extractorUrl,
-                        type = if (trailer.raw) "raw" else "extractor"
+                        type = if (trailer.raw) "raw" else "extractor",
+                        headers = trailer.headers.ifEmpty { null },
+                        referer = trailer.referer
                     )
                 },
+                showStatus = (response as? com.lagradost.cloudstream3.TvSeriesLoadResponse)?.showStatus?.name
+                    ?: (response as? com.lagradost.cloudstream3.AnimeLoadResponse)?.showStatus?.name,
+                uniqueUrl = response.uniqueUrl.takeIf { it != response.url },
                 episodes = (response as? com.lagradost.cloudstream3.TvSeriesLoadResponse)?.episodes?.map { ep ->
                     EpisodeData(
                         data = ep.data,
