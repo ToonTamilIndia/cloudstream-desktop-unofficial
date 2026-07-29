@@ -26,14 +26,17 @@ export default function SettingsScreen() {
   const [dohProvider, setDohProvider] = useState(0)
   const [imageCacheSize, setImageCacheSize] = useState('Calculating...')
   const [saveSnackbar, setSaveSnackbar] = useState(false)
+  const [refreshTick, setRefreshTick] = useState(0)
 
-  const { data: settings } = useApi(() => api.get<any>('/api/settings'), [])
+  const { data: settings } = useApi(() => api.get<any>('/api/settings'), [refreshTick])
   useEffect(() => {
     if (settings) {
       setGlobalSearch(settings.global_search_enabled ?? false)
       setDohProvider(settings.doh_provider ?? 0)
     }
   }, [settings])
+
+  const loadSettings = () => setRefreshTick((t) => t + 1)
 
   const toggleGlobalSearch = () => {
     const next = !globalSearch
@@ -171,7 +174,7 @@ export default function SettingsScreen() {
                 </Button>
                 <Button
                   variant="outlined"
-                  onClick={() => {}}
+                  onClick={loadSettings}
                   sx={{ borderColor: desktopTheme.divider, color: desktopTheme.textPrimary }}
                 >
                   Refresh

@@ -41,9 +41,12 @@ export default function HomeScreen() {
     if (sources.length > 0 && !selectedSource) setSelectedSource(sources[0].name)
   }, [sources])
 
+  const selectedSourceObj = sources.find((s) => s.name === selectedSource)
+  const hasMainPage = selectedSourceObj?.hasMainPage ?? false
+
   const { data: mainPageData } = useApi(
-    () => selectedSource ? api.mainpage(selectedSource) : Promise.resolve(null as any),
-    [selectedSource],
+    () => (hasMainPage && selectedSource ? api.mainpage(selectedSource) : Promise.resolve(null as any)),
+    [selectedSource, hasMainPage],
   )
   const categories: MainPageCategory[] = mainPageData
     ? (mainPageData as MainPageResponse).categories.map((c: any) => ({ title: c.name, items: c.items }))
@@ -80,8 +83,6 @@ export default function HomeScreen() {
     },
     [navigate],
   )
-
-  const selectedSourceObj = sources.find((s) => s.name === selectedSource)
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>

@@ -1,4 +1,5 @@
 
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Box,
@@ -20,10 +21,14 @@ import { desktopTheme } from '../theme/theme'
 export default function LibraryScreen() {
   const navigate = useNavigate()
   const { data, loading } = useApi(() => api.library.list(), [])
-  const items: LibraryItem[] = (data as any)?.items || []
+  const [localItems, setLocalItems] = useState<LibraryItem[] | null>(null)
+  const items: LibraryItem[] = localItems ?? ((data as any)?.items || [])
 
   const handleDelete = async (id: string) => {
-    try { await api.library.delete(id) } catch {}
+    setLocalItems((prev) => (prev ?? items).filter((i) => i.id !== id))
+    try { await api.library.delete(id) } catch {
+      setLocalItems(null) // revert on error: re-show from server data
+    }
   }
 
   const handleItemClick = (item: LibraryItem) => {
