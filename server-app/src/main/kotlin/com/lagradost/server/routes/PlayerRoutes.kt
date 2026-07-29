@@ -58,15 +58,16 @@ fun Route.registerPlayerRoutes() {
                         )
                     },
                     callback = { link ->
+                        val h = link.getAllHeaders()
                         links.add(
                             LinkResult(
                                 name = link.name,
                                 url = link.url,
                                 quality = link.quality,
                                 type = link.type.name,
-                                headers = link.headers,
-                                isM3u8 = link.url.contains(".m3u8", ignoreCase = true),
-                                isDash = link.url.contains(".mpd", ignoreCase = true)
+                                headers = h,
+                                isM3u8 = link.isM3u8,
+                                isDash = link.isDash
                             )
                         )
                     }
@@ -88,7 +89,7 @@ fun Route.registerPlayerRoutes() {
 
         val sessionId = LocalStreamProxy.registerSession(sessionHeaders)
 
-        val streamUrl = if (bestLink.isM3u8 || bestLink.isDash) {
+        val streamUrl = if (bestLink.isM3u8 || bestLink.isDash || bestLink.url.contains(".mp4")) {
             LocalStreamProxy.buildProxyUrl(sessionId, bestLink.url)
         } else {
             bestLink.url

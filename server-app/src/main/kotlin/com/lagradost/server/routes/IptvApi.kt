@@ -79,11 +79,34 @@ fun Route.registerIptvRoutes() {
 
             val channels = mutableListOf<IptvChannel>()
             val channelHeaders = mutableMapOf<Int, Map<String, String>>()
+            val channelDrmKeys = mutableMapOf<Int, Pair<String, String>>() // kid, key
             val lines = content.lines()
             var i = 0
+            var pendingKodipropKey: String? = null // #KODIPROP:inputstream.adaptive.license_key=key
+            var pendingKodipropKid: String? = null
             while (i < lines.size) {
                 val line = lines[i].trim()
-                if (line.startsWith("#EXTINF:")) {
+                val lineUpper = line.uppercase()
+                if (lineUpper.startsWith("#KODIPROP:")) {
+                    val kodiprop = line.substring("#KODIPROP:".length).trim()
+                    val licenseMatch = Regex("""inputstream\.adaptive\.license_key=""", RegexOption.IGNORE_CASE)
+                    if (licenseMatch.containsMatchIn(kodiprop)) {
+                        val keyValue = kodiprop.substringAfter("=").trim()
+                        // Key may be JSON: {"keys":[{"kid":"...","k":"..."}]} or raw hex
+                        pendingKodipropKey = keyValue
+                        try {
+                            val json = org.json.JSONObject(keyValue)
+                            val keys = json.optJSONArray("keys")
+                            if (keys != null && keys.length() > 0) {
+                                val first = keys.getJSONObject(0)
+                                pendingKodipropKid = first.optString("kid", null)
+                            }
+                        } catch (_: Exception) {
+                            // Not JSON, treat as raw key
+                        }
+                    }
+                    i++
+                } else if (line.startsWith("#EXTINF:")) {
                     val info = line.removePrefix("#EXTINF:")
                     val name = info.substringAfterLast(",").trim()
                     val logo = Regex("""tvg-logo="([^"]*)"""").find(info)?.groupValues?.getOrNull(1) ?: ""
@@ -93,8 +116,14 @@ fun Route.registerIptvRoutes() {
                         val (cleanUrl, pipeHeaders) = parsePipeParams(rawUrl)
                         val idx = channels.size
                         channels.add(IptvChannel(name = name, url = cleanUrl, logo = logo, group = group))
+                        val allHeaders = pipeHeaders.toMutableMap()
                         if (pipeHeaders.isNotEmpty()) {
-                            channelHeaders[idx] = pipeHeaders
+                            channelHeaders[idx] = allHeaders
+                        }
+                        if (pendingKodipropKey != null) {
+                            channelDrmKeys[idx] = (pendingKodipropKid ?: "") to pendingKodipropKey!!
+                            pendingKodipropKey = null
+                            pendingKodipropKid = null
                         }
                     }
                     i += 2

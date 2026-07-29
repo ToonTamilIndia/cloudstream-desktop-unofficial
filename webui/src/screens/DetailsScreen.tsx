@@ -19,6 +19,7 @@ import {
 } from '@mui/material'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import { api } from '../api/client'
 import EpisodeCard from '../components/EpisodeCard'
 import CategoryRow from '../components/CategoryRow'
@@ -219,6 +220,11 @@ export default function DetailsScreen() {
                 · {Object.entries(details.dubEpisodes).map(([k, v]) => `${k}: ${v}ep`).join(', ')}
               </Typography>
             )}
+            {details.nextAiring && (
+              <Typography variant="body2" sx={{ color: desktopTheme.accent }}>
+                · Next: E{details.nextAiring.episode}{details.nextAiring.season != null ? ` S${details.nextAiring.season}` : ''} {new Date(details.nextAiring.unixTime * 1000).toLocaleDateString()}
+              </Typography>
+            )}
           </Box>
         </Box>
       </Box>
@@ -280,7 +286,29 @@ export default function DetailsScreen() {
                     {actor.role}
                   </Typography>
                 )}
+                {actor.voiceActorName && (
+                  <Typography variant="caption" sx={{ color: desktopTheme.accent, textAlign: 'center', lineHeight: 1.2, fontSize: '0.6rem' }}>
+                    VA: {actor.voiceActorName}
+                  </Typography>
+                )}
               </Box>
+            ))}
+          </Box>
+        )}
+
+        {details.trailers && details.trailers.length > 0 && (
+          <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+            {details.trailers.map((t, i) => (
+              <Button
+                key={i}
+                variant="outlined"
+                size="small"
+                startIcon={<OpenInNewIcon />}
+                onClick={() => window.open(t.url, '_blank')}
+                sx={{ color: desktopTheme.textMuted, borderColor: desktopTheme.divider }}
+              >
+                Trailer {i + 1}
+              </Button>
             ))}
           </Box>
         )}

@@ -48,6 +48,8 @@ export interface LinkResult {
   drmUuid?: string
   drmLicenseUrl?: string
   audioTracks?: AudioTrackResult[]
+  source?: string
+  extractorData?: string
 }
 
 export interface SubtitleResult {
@@ -64,10 +66,18 @@ export interface LinksResponse {
   proxyUrl?: string
 }
 
+export interface NextAiringData {
+  episode: number
+  unixTime: number
+  season?: number
+}
+
 export interface ActorData {
   name: string
   image?: string
   role?: string
+  voiceActorName?: string
+  voiceActorImage?: string
 }
 
 export interface TrailerData {
@@ -118,6 +128,7 @@ export interface DetailsResponse {
   dubEpisodes?: Record<string, number>
   showStatus?: string
   uniqueUrl?: string
+  nextAiring?: NextAiringData
 }
 
 export interface LibraryItem {
@@ -198,4 +209,5 @@ export interface MainPageCategory {
 
 export interface MainPageResponse {
   categories: MainPageCategory[]
+  hasNext?: boolean
 }

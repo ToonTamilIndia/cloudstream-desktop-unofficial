@@ -31,6 +31,8 @@ data class LinkResult(
     val drmUuid: String? = null,
     val drmLicenseUrl: String? = null,
     val audioTracks: List<AudioTrackResult>? = null,
+    val source: String? = null,
+    val extractorData: String? = null,
 )
 
 data class AudioTrackResult(
@@ -159,7 +161,9 @@ fun Route.registerLinksRoutes() {
                                                     url = track.url,
                                                     headers = track.headers
                                                 )
-                                            }
+                                            },
+                                            source = link.source,
+                                            extractorData = link.extractorData,
                                         )
                                     )
                                 }
@@ -170,7 +174,7 @@ fun Route.registerLinksRoutes() {
                     }.await()
                 }
             }
- 
+  
             // If we have links, create a proxy session for auth headers
             if (links.isNotEmpty()) {
                 // Merge per-link headers first (take priority over defaults)
@@ -319,7 +323,9 @@ fun Route.registerLinksRoutes() {
                                                         url = track.url,
                                                         headers = track.headers
                                                     )
-                                                }
+                                                },
+                                                source = link.source,
+                                                extractorData = link.extractorData,
                                             )
                                         )
                                     }

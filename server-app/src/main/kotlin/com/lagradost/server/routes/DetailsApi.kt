@@ -31,13 +31,22 @@ data class DetailsResponse(
     val episodes: List<EpisodeData>?,
     val dubEpisodes: Map<String, Int>?,
     val showStatus: String? = null,
-    val uniqueUrl: String? = null
+    val uniqueUrl: String? = null,
+    val nextAiring: NextAiringData? = null
+)
+
+data class NextAiringData(
+    val episode: Int,
+    val unixTime: Long,
+    val season: Int? = null
 )
 
 data class ActorData(
     val name: String,
     val image: String?,
-    val role: String?
+    val role: String?,
+    val voiceActorName: String? = null,
+    val voiceActorImage: String? = null
 )
 
 data class TrailerData(
@@ -126,7 +135,9 @@ fun Route.registerDetailsRoutes() {
                     ActorData(
                         name = it.actor.name,
                         image = api.fixUrlNull(it.actor.image),
-                        role = it.roleString
+                        role = it.roleString,
+                        voiceActorName = it.voiceActor?.name,
+                        voiceActorImage = api.fixUrlNull(it.voiceActor?.image)
                     )
                 },
                 comingSoon = response.comingSoon,
@@ -144,6 +155,11 @@ fun Route.registerDetailsRoutes() {
                 showStatus = (response as? com.lagradost.cloudstream3.TvSeriesLoadResponse)?.showStatus?.name
                     ?: (response as? com.lagradost.cloudstream3.AnimeLoadResponse)?.showStatus?.name,
                 uniqueUrl = response.uniqueUrl.takeIf { it != response.url },
+                nextAiring = (response as? com.lagradost.cloudstream3.TvSeriesLoadResponse)?.nextAiring?.let {
+                    NextAiringData(episode = it.episode, unixTime = it.unixTime, season = it.season)
+                } ?: (response as? com.lagradost.cloudstream3.AnimeLoadResponse)?.nextAiring?.let {
+                    NextAiringData(episode = it.episode, unixTime = it.unixTime, season = it.season)
+                },
                 episodes = (response as? com.lagradost.cloudstream3.TvSeriesLoadResponse)?.episodes?.map { ep ->
                     EpisodeData(
                         data = ep.data,

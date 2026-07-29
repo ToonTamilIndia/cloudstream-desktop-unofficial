@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Box, Chip, Typography } from '@mui/material'
 import type { SearchResultItem } from '../types'
 import { desktopTheme } from '../theme/theme'
@@ -7,6 +7,34 @@ interface PosterCardProps {
   item: SearchResultItem
   onClick: () => void
   width?: number
+}
+
+function PosterImg({ src, headers, alt }: { src: string; headers?: Record<string, string>; alt: string }) {
+  const imgRef = useRef<HTMLImageElement>(null)
+  const [objectUrl, setObjectUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!headers || Object.keys(headers).length === 0) return
+    let cancelled = false
+    fetch(src, { headers, mode: 'cors' })
+      .then(r => r.blob())
+      .then(blob => {
+        if (!cancelled) setObjectUrl(URL.createObjectURL(blob))
+      })
+      .catch(() => {})
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl) }
+  }, [src, headers])
+
+  return (
+    <Box
+      component="img"
+      ref={imgRef}
+      src={objectUrl || src}
+      alt={alt}
+      sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+    />
+  )
 }
 
 export default function PosterCard({ item, onClick, width = 160 }: PosterCardProps) {
@@ -43,20 +71,7 @@ export default function PosterCard({ item, onClick, width = 160 }: PosterCardPro
       }}
     >
       {item.posterUrl ? (
-        <Box
-          component="img"
-          src={item.posterUrl}
-          alt={item.name}
-          sx={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            display: 'block',
-          }}
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = 'none'
-          }}
-        />
+        <PosterImg src={item.posterUrl} headers={item.posterHeaders} alt={item.name} />
       ) : (
         <Box
           sx={{

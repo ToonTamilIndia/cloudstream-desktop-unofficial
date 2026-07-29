@@ -73,6 +73,6 @@ fun Route.registerMainPageRoutes() {
             }
         }
 
-        call.respondJson(mapOf("categories" to categories))
+        call.respondJson(mapOf("categories" to categories, "hasNext" to false))
     }
 }
