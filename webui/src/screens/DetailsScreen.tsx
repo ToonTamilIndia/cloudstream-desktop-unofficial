@@ -275,7 +275,7 @@ export default function DetailsScreen() {
           </Box>
         )}
 
-        {(details.type === 'Movie' || details.type?.includes('Movie')) && (
+        {(details.type === 'Movie' || details.type?.includes('Movie') || details.type === 'NSFW') && (
           <Button
             variant="contained"
             startIcon={<PlayArrowIcon />}
