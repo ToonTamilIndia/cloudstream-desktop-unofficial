@@ -31,6 +31,9 @@ import type {
 } from '../types'
 import { desktopTheme } from '../theme/theme'
 
+const SINGLE_PLAY_TYPES = ['Movie', 'AnimeMovie', 'OVA', 'Torrent', 'Documentary', 'NSFW', 'Others', 'Video', 'Music', 'AudioBook', 'Audio', 'Podcast']
+const SERIES_TYPES = ['TvSeries', 'Anime', 'Cartoon', 'AsianDrama']
+
 export default function DetailsScreen() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -54,7 +57,7 @@ export default function DetailsScreen() {
       setDetails(d)
       setLoading(false)
 
-      if (d.type === 'TvSeries' || d.type === 'Anime' || d.type === 'Cartoon') {
+      if (SERIES_TYPES.includes(d.type)) {
         api.episodes(url, apiName).then((ep: EpisodeResponse) => {
           setEpisodeData(ep)
         }).catch(() => {})
@@ -275,7 +278,7 @@ export default function DetailsScreen() {
           </Box>
         )}
 
-        {(details.type === 'Movie' || details.type?.includes('Movie') || details.type === 'NSFW') && (
+        {SINGLE_PLAY_TYPES.includes(details.type) && (
           <Button
             variant="contained"
             startIcon={<PlayArrowIcon />}
