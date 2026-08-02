@@ -44,6 +44,7 @@ object NetworkConfig {
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
+            .cookieJar(DesktopCookieJar())
 
         try {
             // Sort IPv4 first to bypass OkHttp's faulty Happy Eyeballs implementation on Windows

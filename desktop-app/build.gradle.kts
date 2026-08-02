@@ -51,6 +51,9 @@ dependencies {
     implementation(kotlin("reflect")) // Required for Jackson to deserialize plugin Kotlin data classes
     implementation("org.json:json:20240303") // Required for plugins using org.json (natively included on Android)
 
+    // NewPipe Extractor — required by plugins that depend on it (e.g. YouTube extractors)
+    implementation(libs.newpipeextractor)
+
     // Coroutines (swing provides Dispatchers.Main on desktop JVM)
     val coroutinesVersion = "1.10.2"
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutinesVersion")
@@ -166,6 +169,7 @@ compose.desktop {
         mainClass = "com.lagradost.cloudstream3.desktop.MainKt"
         jvmArgs += listOf(
             "-Djava.security.manager=allow",
+            "-Dcloudstream.version=${project.findProperty("APP_VERSION")}",
         )
 
         buildTypes.release.proguard {
@@ -180,7 +184,7 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.AppImage,
             )
             packageName = "CloudStream-Desktop"
-            packageVersion = "0.1.0"
+            packageVersion = project.findProperty("APP_VERSION")?.toString()?.substringBefore('-') ?: "0.0.0"
             description = "CloudStream Desktop Client"
             vendor = "CloudStream"
             includeAllModules = true  // Required — jlink cannot detect dynamically-loaded modules (JNA, Playwright, Conscrypt)

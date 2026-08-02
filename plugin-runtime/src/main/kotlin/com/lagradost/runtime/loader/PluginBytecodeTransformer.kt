@@ -50,8 +50,48 @@ object PluginBytecodeTransformer {
                                             newOpcode = Opcodes.INVOKESTATIC
                                             newOwner = "com/lagradost/runtime/loader/stubs/RuntimeStub"
                                             newDesc = descriptor?.replace("(", "(Ljava/lang/Runtime;")
+                                        } else if (owner == "java/lang/Runtime" && methodName == "availableProcessors" && descriptor == "()I") {
+                                            newOpcode = Opcodes.INVOKESTATIC
+                                            newOwner = "com/lagradost/runtime/loader/stubs/RuntimeStub"
+                                            newDesc = "(Ljava/lang/Runtime;)I"
+                                        } else if (owner == "java/lang/Runtime" && (methodName == "maxMemory" || methodName == "totalMemory" || methodName == "freeMemory") && descriptor == "()J") {
+                                            newOpcode = Opcodes.INVOKESTATIC
+                                            newOwner = "com/lagradost/runtime/loader/stubs/RuntimeStub"
+                                            newDesc = "(Ljava/lang/Runtime;)J"
                                         } else if (owner == "java/lang/System" && (methodName == "exit" || methodName == "loadLibrary" || methodName == "load" || methodName == "setSecurityManager")) {
                                             newOwner = "com/lagradost/runtime/loader/stubs/SystemStub"
+                                        } else if (owner == "java/lang/reflect/Method" && methodName == "invoke" && descriptor == "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;") {
+                                            newOpcode = Opcodes.INVOKESTATIC
+                                            newOwner = "com/lagradost/runtime/loader/stubs/ReflectionStub"
+                                            newDesc = "(Ljava/lang/reflect/Method;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"
+                                        } else if (owner == "java/lang/reflect/Field" && methodName == "get" && descriptor == "(Ljava/lang/Object;)Ljava/lang/Object;") {
+                                            newOpcode = Opcodes.INVOKESTATIC
+                                            newOwner = "com/lagradost/runtime/loader/stubs/ReflectionStub"
+                                            newDesc = "(Ljava/lang/reflect/Field;Ljava/lang/Object;)Ljava/lang/Object;"
+                                        } else if (owner == "java/lang/reflect/Field" && methodName == "set" && descriptor == "(Ljava/lang/Object;Ljava/lang/Object;)V") {
+                                            newOpcode = Opcodes.INVOKESTATIC
+                                            newOwner = "com/lagradost/runtime/loader/stubs/ReflectionStub"
+                                            newDesc = "(Ljava/lang/reflect/Field;Ljava/lang/Object;Ljava/lang/Object;)V"
+                                        } else if (owner == "java/lang/reflect/Constructor" && methodName == "newInstance" && descriptor == "([Ljava/lang/Object;)Ljava/lang/Object;") {
+                                            newOpcode = Opcodes.INVOKESTATIC
+                                            newOwner = "com/lagradost/runtime/loader/stubs/ReflectionStub"
+                                            newDesc = "(Ljava/lang/reflect/Constructor;[Ljava/lang/Object;)Ljava/lang/Object;"
+                                        } else if ((owner == "java/lang/reflect/AccessibleObject" || owner == "java/lang/reflect/Method" || owner == "java/lang/reflect/Field" || owner == "java/lang/reflect/Constructor") && methodName == "setAccessible" && descriptor == "(Z)V") {
+                                            newOpcode = Opcodes.INVOKESTATIC
+                                            newOwner = "com/lagradost/runtime/loader/stubs/ReflectionStub"
+                                            newDesc = "(Ljava/lang/reflect/AccessibleObject;Z)V"
+                                        } else if (owner == "java/net/URL" && methodName == "openConnection") {
+                                            newOpcode = Opcodes.INVOKESTATIC
+                                            newOwner = "com/lagradost/runtime/loader/stubs/URLStub"
+                                            newDesc = descriptor?.replace("(", "(Ljava/net/URL;")
+                                        } else if (owner == "java/net/URL" && methodName == "openStream" && descriptor == "()Ljava/io/InputStream;") {
+                                            newOpcode = Opcodes.INVOKESTATIC
+                                            newOwner = "com/lagradost/runtime/loader/stubs/URLStub"
+                                            newDesc = "(Ljava/net/URL;)Ljava/io/InputStream;"
+                                        } else if (owner == "java/net/URL" && methodName == "getContent") {
+                                            newOpcode = Opcodes.INVOKESTATIC
+                                            newOwner = "com/lagradost/runtime/loader/stubs/URLStub"
+                                            newDesc = descriptor?.replace("(", "(Ljava/net/URL;")
                                         }
 
                                         super.visitMethodInsn(newOpcode, newOwner, fixMethodName(methodName), newDesc, isInterface)

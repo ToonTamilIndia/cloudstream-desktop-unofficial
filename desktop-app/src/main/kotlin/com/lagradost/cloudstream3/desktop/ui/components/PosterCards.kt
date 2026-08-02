@@ -88,7 +88,8 @@ fun PosterCard(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(DesktopUi.SurfaceElevated),
+                        .background(DesktopUi.SurfaceElevated)
+                        .shimmerBackground(),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(

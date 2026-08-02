@@ -14,6 +14,13 @@ import com.lagradost.cloudstream3.desktop.init.initProxy
 import com.lagradost.cloudstream3.desktop.init.initSecurity
 import com.lagradost.cloudstream3.desktop.init.launchAutoUpdater
 import com.lagradost.cloudstream3.desktop.ui.CloudstreamApp
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import kotlinx.coroutines.launch
 import com.lagradost.common.logging.AppLogger
 import com.lagradost.common.platform.PlatformPaths
 import okio.Path.Companion.toOkioPath
@@ -42,6 +49,9 @@ fun main() {
     initProviders()
     initPlugins()
     launchAutoUpdater()
+    com.lagradost.cloudstream3.desktop.utils.appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        AppUpdater.checkForUpdates()
+    }
     // Load Kodi config from saved settings
     com.lagradost.player.impl.KodiConfig.run {
         host = com.lagradost.common.storage.DesktopDataStore.getKey<String>("kodi_host") ?: host
@@ -96,7 +106,39 @@ fun main() {
                 com.lagradost.cloudstream3.desktop.ui.LocalWindowState provides state,
                 com.lagradost.cloudstream3.desktop.ui.LocalAwtWindow provides awtWindow,
             ) {
-                CloudstreamApp()
+                androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+                    CloudstreamApp()
+
+                    // App Update Dialog Overlay
+                    val latestRelease by AppUpdater.latestRelease.collectAsState()
+                    if (latestRelease != null) {
+                        var showUpdateDialog by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
+                        if (showUpdateDialog) {
+                            androidx.compose.material3.AlertDialog(
+                                onDismissRequest = { showUpdateDialog = false },
+                                title = { androidx.compose.material3.Text("Update Available: v${latestRelease!!.tag_name.removePrefix("v")}", style = androidx.compose.material3.MaterialTheme.typography.titleLarge) },
+                                text = {
+                                    androidx.compose.foundation.layout.Column {
+                                        androidx.compose.material3.Text("A new version of CloudStream Desktop is available!", style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
+                                        androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+                                        androidx.compose.material3.Text(latestRelease!!.body ?: "", style = androidx.compose.material3.MaterialTheme.typography.bodySmall, maxLines = 10)
+                                    }
+                                },
+                                confirmButton = {
+                                    androidx.compose.material3.Button(onClick = {
+                                        try {
+                                            java.awt.Desktop.getDesktop().browse(java.net.URI(latestRelease!!.html_url))
+                                        } catch (e: Exception) {}
+                                        showUpdateDialog = false
+                                    }) { androidx.compose.material3.Text("Download") }
+                                },
+                                dismissButton = {
+                                    androidx.compose.material3.TextButton(onClick = { showUpdateDialog = false }) { androidx.compose.material3.Text("Later") }
+                                }
+                            )
+                        }
+                    }
+                }
             }
         }
     }
