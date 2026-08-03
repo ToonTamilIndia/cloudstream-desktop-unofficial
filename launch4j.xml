@@ -21,13 +21,13 @@
   <restartOnCrash>false</restartOnCrash>
   <singleInstance>false</singleInstance>
   <jre>
-    <bundledJrePath>%EXEDIR%\jre</bundledJrePath>
+    <path>%EXEDIR%\jre</path>
     <minVersion>21</minVersion>
     <maxVersion>99</maxVersion>
-    <jvmOptions>
+    <options>
       <option>-Djava.security.manager=allow</option>
       <option>-Dcloudstream.version=0.0.1-beta</option>
-    </jvmOptions>
+    </options>
   </jre>
   <dontWrapJar>false</dontWrapJar>
 </launch4jConfig>
