@@ -189,6 +189,7 @@ jobs:
         with:
           manifest-path: flatpak-manifest.json
           bundle: build/flatpak/CloudStream-Desktop-0.0.2-beta.flatpak
+          upload-artifact: false
           cache: true
 
       - name: Upload Flatpak bundle
