@@ -1,4 +1,4 @@
-name: Build and Release (jpackage — Windows MSI + Linux deb/rpm/AppImage)
+name: Build and Release (Windows MSI/EXE + Linux deb/rpm/AppImage/Flatpak)
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release_windows:
-    name: Windows (MSI)
+    name: Windows (MSI + EXE)
     runs-on: windows-latest
 
     steps:
@@ -38,10 +38,13 @@ jobs:
         Invoke-WebRequest -Headers $headers -Uri $asset.browser_download_url -OutFile "mpv-dev.7z"
         7z e mpv-dev.7z "libmpv-2.dll" -o"desktop-app/appResources/windows/mpv" -r
 
-    - name: Build MSI installer (jpackage)
+    - name: Build MSI + single-file EXE (jpackage)
       shell: pwsh
       run: |
-        ./gradlew desktop-app:packageReleaseMsi
+        # packageReleaseMsi  -> CloudStream-Desktop.msi
+        # packageReleaseExe  -> single self-contained CloudStream-Desktop.exe
+        #                       (jpackage --type exe bundles a JRE: no Java install needed)
+        ./gradlew desktop-app:packageReleaseMsi desktop-app:packageReleaseExe
 
     - name: Upload Windows MSI
       uses: actions/upload-artifact@v4
@@ -50,8 +53,15 @@ jobs:
         path: desktop-app/build/compose/binaries/main-release/msi/*.msi
         if-no-files-found: error
 
+    - name: Upload Windows EXE
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-exe
+        path: desktop-app/build/compose/binaries/main-release/exe/*.exe
+        if-no-files-found: error
+
   release_linux:
-    name: Linux (deb / rpm / AppImage)
+    name: Linux (deb / rpm / AppImage / Flatpak)
     runs-on: ubuntu-latest
 
     steps:
@@ -80,6 +90,19 @@ jobs:
         ./gradlew desktop-app:packageReleaseRpm
         ./gradlew desktop-app:packageReleaseDeb
 
+    - name: Build Flatpak (best-effort)
+      continue-on-error: true
+      run: |
+        sudo apt-get install -y flatpak flatpak-builder
+        # Stage the jpackage app-image into the flatpak source layout
+        mkdir -p flatpak/app
+        cp -r desktop-app/build/compose/binaries/main-release/app/CloudStream-Desktop flatpak/app/CloudStream-Desktop
+        flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+        flatpak install -y --noninteractive flathub org.freedesktop.Sdk//23.08 org.freedesktop.Platform//23.08
+        flatpak-builder --force-clean --repo=build/flatpak-repo build/flatpak flatpak-manifest.json
+        flatpak build-bundle build/flatpak-repo build/flatpak/CloudStream-Desktop-0.0.1-beta.flatpak com.github.ToonTamilIndia.CloudStreamDesktop stable
+        echo "FLATPAK_BUILT=1" >> "$GITHUB_ENV"
+
     - name: Upload Linux artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -88,7 +111,8 @@ jobs:
           desktop-app/build/compose/binaries/main-release/**/*.AppImage
           desktop-app/build/compose/binaries/main-release/**/*.rpm
           desktop-app/build/compose/binaries/main-release/**/*.deb
-        if-no-files-found: error
+          build/flatpak/*.flatpak
+        if-no-files-found: warn
 
   publish:
     name: Publish Release
@@ -106,8 +130,10 @@ jobs:
       with:
         files: |
           artifacts/windows-msi/*.msi
+          artifacts/windows-exe/*.exe
           artifacts/linux-packages/**/*.AppImage
           artifacts/linux-packages/**/*.rpm
           artifacts/linux-packages/**/*.deb
+          artifacts/linux-packages/**/*.flatpak
         generate_release_notes: true
         make_latest: true

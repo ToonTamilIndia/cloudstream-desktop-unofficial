@@ -134,18 +134,19 @@ The distributable fat JAR bundles **Skiko natives for every platform** (`skiko-w
 | Artifact | Build tool | Platform |
 |----------|-----------|----------|
 | `CloudStream-Desktop-0.0.1-beta.jar` (fat, cross-platform) | Gradle `fatJar` | Linux / Windows |
-| `CloudStream-Desktop.exe` + bundled `jre/` | Launch4j (wraps the fat jar) | Windows |
+| `CloudStream-Desktop.exe` (single self-contained) | Gradle `packageExe` (jpackage `--type exe`) | Windows |
+| `CloudStream-Desktop.msi` | Gradle `packageMsi` (jpackage) | Windows |
 | `CloudStream-Desktop-0.0.1-beta.AppImage` | Gradle `packageAppImage` (jpackage) | Linux |
 | `CloudStream-Desktop-0.0.1-beta.x86_64.rpm` | Gradle `packageReleaseRpm` (jpackage) | Linux (Fedora/openSUSE) |
 | `.deb` | Gradle `packageReleaseDeb` (jpackage) | Linux (Debian/Ubuntu) |
-| `CloudStream-Desktop.msi` | Gradle `packageMsi` (jpackage) | Windows |
+| `.flatpak` | `flatpak-builder` (best-effort in CI) | Linux |
 
 > **jpackage vs GraalVM Native Image:** a true Native Image is not practical for CloudStream Desktop — it loads arbitrary user extensions at runtime (open-world dynamic classloading/reflection) and depends on Skiko/Skia, JavaFX WebView, Playwright, and JNA-linked `libmpv-2.dll`. jpackage (JDK 14+, bundled with JDK 21) is the supported, reproducible path. Note jpackage only targets the OS it runs on, so each format is produced by its matching CI runner.
 
 ### Automated release (GitHub Actions)
 Pushing a `v*` tag (e.g. `v0.0.1-beta`) triggers `.github/workflows/release.yml`, which builds on native runners and attaches release assets:
-- **Windows** (`windows-latest`): downloads `libmpv-2.dll`, runs `packageReleaseMsi` → MSI.
-- **Linux** (`ubuntu-latest`): installs `rpmbuild` + `fpm`, runs `packageReleaseAppImage` / `packageReleaseRpm` / `packageReleaseDeb` → AppImage / rpm / deb.
+- **Windows** (`windows-latest`): downloads `libmpv-2.dll`, runs `packageReleaseMsi` + `packageReleaseExe` → MSI **and** a single self-contained EXE.
+- **Linux** (`ubuntu-latest`): installs `rpmbuild` + `fpm`, runs `packageReleaseAppImage` / `packageReleaseRpm` / `packageReleaseDeb`, then (best-effort) `flatpak-builder` → AppImage / rpm / deb / flatpak.
 
 To trigger a release:
 ```bash
