@@ -11,6 +11,7 @@ import VideoLibraryIcon from '@mui/icons-material/VideoLibrary'
 import ExtensionIcon from '@mui/icons-material/Extension'
 import SettingsIcon from '@mui/icons-material/Settings'
 import LiveTvIcon from '@mui/icons-material/LiveTv'
+import DownloadIcon from '@mui/icons-material/Download'
 import { desktopTheme } from '../theme/theme'
 
 const navItems = [
@@ -18,6 +19,7 @@ const navItems = [
   { label: 'Library', icon: <VideoLibraryIcon />, path: '/library' },
   { label: 'Extensions', icon: <ExtensionIcon />, path: '/extensions' },
   { label: 'IPTV', icon: <LiveTvIcon />, path: '/iptv' },
+  { label: 'Downloads', icon: <DownloadIcon />, path: '/downloads' },
   { label: 'Settings', icon: <SettingsIcon />, path: '/settings' },
 ]
 

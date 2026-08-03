@@ -32,6 +32,7 @@ import com.lagradost.cloudstream3.desktop.ui.components.DesktopUi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.common.storage.DesktopDataStore
 import com.lagradost.common.storage.WatchHistory
+import com.lagradost.common.download.DownloadStatus
 import com.lagradost.player.impl.PlayerLinkHandler
 import com.lagradost.player.impl.VlcPlayer
 import com.lagradost.player.impl.MpvPlayer
@@ -77,6 +78,9 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
     var kodiAuthUser by remember { mutableStateOf(KodiConfig.username) }
     var kodiAuthPass by remember { mutableStateOf(KodiConfig.password) }
 
+    var downloadProgress by remember { mutableStateOf<com.lagradost.cloudstream3.desktop.download.DesktopDownloader.Progress?>(null) }
+    var downloadLink by remember { mutableStateOf<ExtractorLink?>(null) }
+
     val availableQualities = remember(links.size) { links.map { it.quality.toString() }.distinct().sorted() }
     val filteredLinks = remember(links.size, selectedQuality) {
         if (selectedQuality == null) links else links.filter { it.quality.toString() == selectedQuality }
@@ -90,6 +94,31 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
             } else if (history.episode != null) {
                 append(" - E${history.episode}")
             }
+        }
+    }
+
+    val onDownload = { link: ExtractorLink ->
+        downloadLink = link
+        downloadProgress = com.lagradost.cloudstream3.desktop.download.DesktopDownloader.Progress(
+            DownloadStatus.DOWNLOADING,
+        )
+        coroutineScope.launch {
+            com.lagradost.cloudstream3.desktop.download.DesktopDownloader.cancel()
+            try {
+                val file = com.lagradost.cloudstream3.desktop.download.DesktopDownloader.download(
+                    link = link,
+                    title = displayTitle,
+                    onProgress = { p ->
+                        coroutineScope.launch { downloadProgress = p }
+                    },
+                )
+                statusText = "Downloaded to ${file?.absolutePath}"
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                statusText = "Download cancelled."
+            } catch (t: Throwable) {
+                statusText = "Download failed: ${t.message}"
+            }
+            downloadLink = null
         }
     }
 
@@ -433,6 +462,51 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
                                 }
                             }
                         }
+                        val dl = downloadProgress
+                        if (dl != null && dl.status != DownloadStatus.COMPLETED
+                            && dl.status != DownloadStatus.FAILED) {
+                            item {
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = DesktopUi.SurfaceElevated,
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                "Downloading: ${downloadLink?.name ?: "..."}",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = DesktopUi.TextPrimary,
+                                            )
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            LinearProgressIndicator(
+                                                progress = { dl.fraction.toFloat().coerceIn(0f, 1f) },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                color = DesktopUi.Accent,
+                                            )
+                                            val pct = (dl.fraction * 100).toInt()
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                "${pct}% · ${dl.bytesDownloaded} bytes",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = DesktopUi.TextMuted,
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        OutlinedButton(
+                                            onClick = { com.lagradost.cloudstream3.desktop.download.DesktopDownloader.cancel() },
+                                            shape = RoundedCornerShape(10.dp),
+                                        ) {
+                                            Text("Cancel")
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         itemsIndexed(filteredLinks, key = { index, it -> "${it.name}-${it.url}-$index" }) { index, link ->
                             StreamLinkCard(
                                 link = link,
@@ -451,6 +525,7 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
                                 onProxyPlay = {
                                     playLink(link, true)
                                 },
+                                onDownload = { onDownload(link) },
                             )
                         }
                         item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -636,6 +711,7 @@ private fun StreamLinkCard(
     onPlay: () -> Unit,
     onCopy: () -> Unit,
     onProxyPlay: () -> Unit,
+    onDownload: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
@@ -697,6 +773,14 @@ private fun StreamLinkCard(
                 shape = RoundedCornerShape(10.dp),
             ) {
                 Text("Proxy")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            OutlinedButton(
+                onClick = onDownload,
+                enabled = !isBusy,
+                shape = RoundedCornerShape(10.dp),
+            ) {
+                Text("Download")
             }
             Spacer(modifier = Modifier.width(8.dp))
             Button(

@@ -22,6 +22,8 @@ Make webUI match desktop for extensions/settings/player/IPTV, fix proxy CORS for
 ## Progress
 
 ### Done
+- **Download feature (webui + desktop + server)**: `DownloadApi.kt` (POST /api/downloads start, GET /api/downloads list, GET /{id}/status, DELETE /{id} cancel, GET /{id}/file serve), `DownloadManager.kt` (OkHttp direct + HLS segment concat, per-link headers merged over defaults, progress/cancel, saves to `PlatformPaths.downloadsDir`), `DownloadsScreen.tsx` (live polling list, progress bars, cancel, save-file link), Download icon per link in `DetailsScreen.tsx`, nav + route `/downloads`, `api.downloads.*` client methods, desktop `DesktopDownloader.kt` + Download button + progress card in `LinksScreen.kt`. Verified end-to-end: task CREATED → COMPLETED → file served via `/api/downloads/{id}/file`.
+- **Server-side Cloudflare bypass** (`server-app/network/CloudflareBypassInterceptor.kt` + `ServerBrowserManager.kt`): server-app never installed the CloudflareKiller interceptor that the desktop adds to `app.baseClient`, so webui streams came back as Cloudflare challenge pages. Now `Server.kt` initServiceServices installs the interceptor on `app.baseClient` (the client the proxy derives from). Detects 403/503/429 + `Server: cloudflare` + text/html, solves per-host with headless Chromium (Playwright), caches cf_clearance cookie + UA, retries via a dedicated netClient.
 - **TMDb name fix**: Set `name = "TMDB"` in both `Server.kt` and `PluginInit.kt` so it no longer shows "NONE"
 - **Settings screen**: `SettingsScreen.tsx` + `SettingsApi.kt` (generic key-value settings backed by `DesktopDataStore`) — Appearance, Network, Advanced, About tabs
 - **IPTV screen**: `IptvScreen.tsx` + `IptvApi.kt` (M3U parser via OkHttp) — enter URL, filter by group, play channels
@@ -48,12 +50,16 @@ Make webUI match desktop for extensions/settings/player/IPTV, fix proxy CORS for
   - `POST /api/plugins/install` — downloads JAR from `jarUrl`, saves to extensions dir, loads via `ExtensionLoader`
   - `DELETE /api/plugins/{name}` — unloads + deletes plugin JAR + companion `-jvm.jar`
 - **WebUI API client**: added `browse()`, `installPlugin()`, `deletePlugin()` methods
-- **Both compilations pass**: `./gradlew :server-app:compileKotlin` and `npx tsc --noEmit`
+- **Both compilations pass**: `./gradlew :server-app:compileKotlin`, `./gradlew :desktop-app:compileKotlin`, `npx tsc --noEmit`
+
+### In Progress
+- Download feature core is functional (verified end-to-end via curl: POST start → GET list shows COMPLETED → GET /file serves bytes). Remaining: test HLS segment concat against a real stream, verify cancel mid-download, confirm desktop Download button works in the GUI.
 
 ### Next Steps
 1. **Test end-to-end**: verify DRM streams play through JW Player (ClearKey + Widevine), verify Browse tab fetches from real repos, verify install/uninstall flow
 2. **Test POST /api/repositories 403** — curl directly to localhost:8080 to isolate Vite proxy vs Ktor issue
 3. **Upstream 403/404 on some streams** — some M3U8 URLs from providers return 403/404 even with correct headers; may be expired tokens or provider-specific auth
+4. **Verify Cloudflare bypass live**: play a Cloudflare-protected stream through webui proxy and confirm the challenge is solved (currently validated: interceptor installs, headless Chromium auto-detects system browser)
 
 ## Key Decisions
 - **Full plugin loading for server-app** — uses `ExtensionLoader.loadAndInit()` same as desktop-app. Catches individual plugin failures so one bad plugin doesn't block startup

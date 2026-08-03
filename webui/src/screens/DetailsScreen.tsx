@@ -16,10 +16,12 @@ import {
   ListItemButton,
   ListItemText,
   Rating,
+  Tooltip,
 } from '@mui/material'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
+import DownloadIcon from '@mui/icons-material/Download'
 import { api } from '../api/client'
 import { useApi, useApiLazy } from '../hooks/useApi'
 import EpisodeCard from '../components/EpisodeCard'
@@ -55,6 +57,7 @@ export default function DetailsScreen() {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
   const [fetchLinks, { data: currentLinks, loading: linksLoading }] = useApiLazy<LinksResponse>()
   const [selectedEpisode, setSelectedEpisode] = useState<EpisodeData | null>(null)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
 
   const filteredEpisodes: EpisodeData[] = episodeData
     ? episodeData.episodes.filter((e) => e.season == null || e.season === season)
@@ -71,6 +74,24 @@ export default function DetailsScreen() {
     setLinkDialogOpen(true)
     fetchLinks(() => api.links(ep.data, url, apiName))
   }, [url, fetchLinks])
+
+  const handleDownloadLink = useCallback(async (link: LinkResult) => {
+    const ep = selectedEpisode
+    const title = ep?.name || details?.name || link.name || 'download'
+    try {
+      await api.downloads.start({
+        url: link.url,
+        title,
+        isM3u8: link.isM3u8,
+        isDash: link.isDash,
+        headers: link.headers || undefined,
+      })
+    } catch (e: any) {
+      setDownloadError(e.message)
+      return
+    }
+    navigate('/downloads')
+  }, [selectedEpisode, details, navigate])
 
   const handlePlayLink = useCallback((link: LinkResult) => {
     const playUrl = link.proxyUrl || link.url
@@ -404,6 +425,11 @@ export default function DetailsScreen() {
             </Box>
           ) : currentLinks && currentLinks.links.length > 0 ? (
             <>
+              {downloadError && (
+                <Typography variant="caption" sx={{ color: '#EF4444', display: 'block', px: 2, pb: 1 }}>
+                  Download failed: {downloadError}
+                </Typography>
+              )}
               {currentLinks.subtitles && currentLinks.subtitles.length > 0 && (
                 <Typography variant="caption" sx={{ color: desktopTheme.textMuted, px: 2, pb: 1, display: 'block' }}>
                   Subtitles: {currentLinks.subtitles.map(s => s.lang).join(', ')}
@@ -426,6 +452,16 @@ export default function DetailsScreen() {
                     primaryTypographyProps={{ color: desktopTheme.textPrimary, fontWeight: 500 }}
                     secondaryTypographyProps={{ color: desktopTheme.textMuted }}
                   />
+                  <Tooltip title="Download">
+                    <IconButton
+                      size="small"
+                      edge="end"
+                      onClick={(e) => { e.stopPropagation(); handleDownloadLink(link) }}
+                      sx={{ color: desktopTheme.textMuted, '&:hover': { color: desktopTheme.accent } }}
+                    >
+                      <DownloadIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                 </ListItemButton>
               ))}
             </List>

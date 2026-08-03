@@ -9,8 +9,9 @@ import ExtensionsScreen from './screens/ExtensionsScreen'
 import PlayerScreen from './screens/PlayerScreen'
 import SettingsScreen from './screens/SettingsScreen'
 import IptvScreen from './screens/IptvScreen'
+import DownloadsScreen from './screens/DownloadsScreen'
 
-const dockRoutes = ['/', '/library', '/extensions', '/iptv', '/settings']
+const dockRoutes = ['/', '/library', '/extensions', '/iptv', '/downloads', '/settings']
 
 function AppShell() {
   const location = useLocation()
@@ -38,6 +39,7 @@ function AppShell() {
           <Route path="/details" element={<DetailsScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
           <Route path="/iptv" element={<IptvScreen />} />
+          <Route path="/downloads" element={<DownloadsScreen />} />
         </Routes>
       </Box>
     </Box>

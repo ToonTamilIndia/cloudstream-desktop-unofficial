@@ -211,3 +211,21 @@ export interface MainPageResponse {
   categories: MainPageCategory[]
   hasNext?: boolean
 }
+
+export type DownloadStatus = 'QUEUED' | 'DOWNLOADING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+
+export interface DownloadTask {
+  id: string
+  title: string
+  filename: string
+  path: string
+  status: DownloadStatus
+  progress: number
+  bytesDownloaded: number
+  totalBytes: number
+  error?: string | null
+}
+
+export interface DownloadsResponse {
+  downloads: DownloadTask[]
+}

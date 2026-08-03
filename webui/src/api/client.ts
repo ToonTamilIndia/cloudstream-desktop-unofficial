@@ -11,6 +11,8 @@ import type {
   SettingsResponse,
   HealthResponse,
   MainPageResponse,
+  DownloadTask,
+  DownloadsResponse,
 } from '../types'
 
 async function get<T>(path: string, params?: Record<string, string>): Promise<T> {
@@ -89,4 +91,17 @@ export const api = {
     get<SettingsResponse>(`/api/plugins/${encodeURIComponent(name)}/settings`),
   savePluginSetting: (name: string, key: string, value: string) =>
     post<{ success: boolean }>(`/api/plugins/${encodeURIComponent(name)}/settings`, { key, value }),
+  downloads: {
+    list: () => get<DownloadsResponse>('/api/downloads'),
+    start: (body: {
+      url: string
+      title?: string
+      isM3u8?: boolean
+      isDash?: boolean
+      headers?: Record<string, string>
+    }) => post<DownloadTask>('/api/downloads', body),
+    status: (id: string) => get<DownloadTask>(`/api/downloads/${encodeURIComponent(id)}/status`),
+    cancel: (id: string) => del(`/api/downloads/${encodeURIComponent(id)}`),
+    fileUrl: (id: string) => `/api/downloads/${encodeURIComponent(id)}/file`,
+  },
 }

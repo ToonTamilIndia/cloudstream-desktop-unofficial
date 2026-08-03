@@ -65,6 +65,7 @@ fun main(args: Array<String>) {
             registerPluginsRoutes()
             registerSettingsRoutes()
             registerIptvRoutes()
+            registerDownloadRoutes()
 
             get("/") {
                 call.respondRedirect("/index.html")
@@ -87,6 +88,23 @@ private fun initServerServices() {
         DesktopDataStore.init()
     } catch (e: Exception) {
         AppLogger.e("Security init failed", e)
+    }
+
+    // Install the Cloudflare bypass interceptor on the shared networking client.
+    // The media proxy derives its OkHttp client from `app.baseClient`, so without this
+    // the web UI receives Cloudflare challenge pages (403/503) instead of stream data.
+    try {
+        val client = com.lagradost.cloudstream3.app.baseClient.newBuilder()
+            .addInterceptor(com.lagradost.server.network.CloudflareBypassInterceptor())
+            .build()
+        com.lagradost.cloudstream3.app.baseClient = client
+        com.lagradost.cloudstream3.app.defaultHeaders = mapOf(
+            "user-agent" to com.lagradost.cloudstream3.USER_AGENT,
+        )
+        com.lagradost.common.download.DownloadManager.configureClient(client)
+        AppLogger.i("Installed CloudflareBypass interceptor on app.baseClient")
+    } catch (e: Exception) {
+        AppLogger.e("Cloudflare bypass init failed", e)
     }
 
     try {

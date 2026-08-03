@@ -65,4 +65,30 @@ object PlatformPaths {
     val logsDir: File by lazy {
         File(appDataDir, "logs").also { it.mkdirs() }
     }
+
+    /**
+     * Directory for downloaded media (movies/episodes saved by the downloader).
+     * Cross-platform: Windows -> %USERPROFILE%\Downloads\CloudStream
+     *                macOS   -> ~/Downloads/CloudStream
+     *                Linux   -> ~/Downloads/CloudStream
+     * Falls back to the app data dir if the user's Downloads folder is unavailable.
+     */
+    val downloadsDir: File by lazy {
+        val base = System.getProperty("user.home")
+        val guesses = listOf(
+            File(base, "Downloads" + File.separator + "CloudStream"),
+            File(System.getenv("USERPROFILE"), "Downloads" + File.separator + "CloudStream"),
+            File(base, "CloudStream" + File.separator + "Downloads"),
+        )
+        val chosen = guesses.firstOrNull { it.exists() || it.parentFile.exists() || it.parentFile.parentFile.exists() }
+            ?: File(appDataDir, "downloads")
+        chosen.also {
+            try {
+                it.mkdirs()
+            } catch (e: Exception) {
+                // fall back to appDataDir if mkdir fails (read-only home, etc.)
+                File(appDataDir, "downloads").also { f -> f.mkdirs() }.also { _ -> }
+            }
+        }
+    }
 }
