@@ -300,7 +300,7 @@ export default function DetailsScreen() {
           <Button
             variant="contained"
             startIcon={<PlayArrowIcon />}
-            onClick={() => handleEpisodeClick({ data: url, name: details.name })}
+            onClick={() => handleEpisodeClick({ data: details.episodes?.[0]?.data || url, name: details.name })}
             sx={{
               bgcolor: desktopTheme.accent,
               color: '#fff',
@@ -321,7 +321,7 @@ export default function DetailsScreen() {
             variant="contained"
             fullWidth
             startIcon={<PlayArrowIcon />}
-            onClick={() => handleEpisodeClick({ data: url, name: details.name })}
+            onClick={() => handleEpisodeClick({ data: details.episodes?.[0]?.data || url, name: details.name })}
             sx={{
               bgcolor: '#e53935',
               color: '#fff',
