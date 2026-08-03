@@ -130,6 +130,17 @@ jobs:
         # then archive it so the flatpak job can restore the exact same tree.
         mkdir -p flatpak/app
         cp -r desktop-app/build/compose/binaries/main-release/app/CloudStream-Desktop flatpak/app/CloudStream-Desktop
+        cat > flatpak/app/CloudStream-Desktop.desktop <<'EOF'
+        [Desktop Entry]
+        Type=Application
+        Name=CloudStream Desktop
+        Comment=CloudStream Desktop Client
+        Exec=CloudStream-Desktop
+        Icon=logo_ui
+        Categories=AudioVideo;Video;Player;
+        Terminal=false
+        EOF
+        cp desktop-app/src/main/resources/logo_ui.png flatpak/app/logo_ui.png
         tar -C flatpak -czf flatpak-app-image.tar.gz app
 
     - name: Upload app-image for Flatpak

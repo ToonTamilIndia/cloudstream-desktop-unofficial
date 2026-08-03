@@ -4,7 +4,7 @@
   "runtime": "org.freedesktop.Platform",
   "runtime-version": "24.08",
   "sdk": "org.freedesktop.Sdk",
-  "command": "app/CloudStream-Desktop/bin/CloudStream-Desktop",
+  "command": "CloudStream-Desktop",
   "separate-locales": false,
   "finish-args": [
     "--share=ipc",
@@ -18,12 +18,18 @@
     {
       "name": "cloudstream-desktop",
       "buildsystem": "simple",
-      "build-commands": [],
+      "build-commands": [
+        "cp -r CloudStream-Desktop /app/CloudStream-Desktop",
+        "mkdir -p /app/bin /app/share/applications /app/share/icons/hicolor/256x256/apps",
+        "ln -sf /app/CloudStream-Desktop/bin/CloudStream-Desktop /app/bin/CloudStream-Desktop",
+        "install -Dm644 CloudStream-Desktop.desktop /app/share/applications/com.github.toontamilindia.cloudstreamdesktop.desktop",
+        "install -Dm644 logo_ui.png /app/share/icons/hicolor/256x256/apps/logo_ui.png"
+      ],
       "sources": [
         {
           "type": "dir",
-          "path": "flatpak/app/CloudStream-Desktop",
-          "dest": "app/CloudStream-Desktop"
+          "path": "flatpak/app",
+          "dest": "."
         }
       ]
     }
