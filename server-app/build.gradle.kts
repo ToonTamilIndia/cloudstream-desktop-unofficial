@@ -16,6 +16,10 @@ java {
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+        freeCompilerArgs.addAll(
+            "-Xopt-in=com.lagradost.cloudstream3.Prerelease",
+            "-Xopt-in=com.lagradost.cloudstream3.InternalAPI",
+        )
     }
 }
 

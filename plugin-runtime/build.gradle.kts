@@ -2,6 +2,15 @@ plugins {
     kotlin("jvm")
 }
 
+kotlin {
+    compilerOptions {
+        freeCompilerArgs.addAll(
+            "-Xopt-in=com.lagradost.cloudstream3.Prerelease",
+            "-Xopt-in=com.lagradost.cloudstream3.InternalAPI",
+        )
+    }
+}
+
 dependencies {
     // Needs access to stubs to pass to plugins
     implementation(project(":android-stubs"))

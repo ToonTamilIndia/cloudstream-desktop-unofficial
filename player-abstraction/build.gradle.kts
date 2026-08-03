@@ -2,6 +2,15 @@ plugins {
     kotlin("jvm")
 }
 
+kotlin {
+    compilerOptions {
+        freeCompilerArgs.addAll(
+            "-Xopt-in=com.lagradost.cloudstream3.Prerelease",
+            "-Xopt-in=com.lagradost.cloudstream3.InternalAPI",
+        )
+    }
+}
+
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
     implementation(libs.nicehttp)
