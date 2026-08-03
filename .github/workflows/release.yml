@@ -126,15 +126,17 @@ jobs:
     - name: Stage app-image for Flatpak (best-effort)
       continue-on-error: true
       run: |
-        # Copy the jpackage app-image into the layout the flatpak manifest expects
+        # Copy the jpackage app-image into the layout the flatpak manifest expects,
+        # then archive it so the flatpak job can restore the exact same tree.
         mkdir -p flatpak/app
         cp -r desktop-app/build/compose/binaries/main-release/app/CloudStream-Desktop flatpak/app/CloudStream-Desktop
+        tar -C flatpak -czf flatpak-app-image.tar.gz app
 
     - name: Upload app-image for Flatpak
       uses: actions/upload-artifact@v4
       with:
         name: flatpak-app-image
-        path: flatpak/app/CloudStream-Desktop
+        path: flatpak-app-image.tar.gz
         if-no-files-found: warn
 
     - name: Upload Linux artifacts
@@ -164,7 +166,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: flatpak-app-image
-          path: flatpak/app
+
+      - name: Restore app-image tree
+        run: tar -xzf flatpak-app-image.tar.gz
 
       - name: Build Flatpak bundle
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
