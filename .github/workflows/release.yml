@@ -181,6 +181,9 @@ jobs:
       - name: Restore app-image tree
         run: mkdir -p flatpak && tar -C flatpak -xzf flatpak-app-image.tar.gz
 
+      - name: Ensure bundle dir
+        run: mkdir -p build/flatpak
+
       - name: Build Flatpak bundle
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
