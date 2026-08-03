@@ -130,21 +130,12 @@ jobs:
         mkdir -p flatpak/app
         cp -r desktop-app/build/compose/binaries/main-release/app/CloudStream-Desktop flatpak/app/CloudStream-Desktop
 
-    - name: Install Flatpak tooling
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y flatpak flatpak-builder
-        sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-        flatpak --version
-
-    - name: Build Flatpak (official action, user install)
-      if: always()
-      continue-on-error: true
-      uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+    - name: Upload app-image for Flatpak
+      uses: actions/upload-artifact@v4
       with:
-        manifest-path: flatpak-manifest.json
-        bundle: build/flatpak/CloudStream-Desktop-0.0.2-beta.flatpak
-        cache: true
+        name: flatpak-app-image
+        path: flatpak/app/CloudStream-Desktop
+        if-no-files-found: warn
 
     - name: Upload Linux artifacts
       uses: actions/upload-artifact@v4
@@ -154,13 +145,45 @@ jobs:
           desktop-app/build/compose/binaries/main-release/**/*.AppImage
           desktop-app/build/compose/binaries/main-release/**/*.rpm
           desktop-app/build/compose/binaries/main-release/**/*.deb
-          build/flatpak/*.flatpak
         if-no-files-found: warn
+
+  # Flatpak must be built in the flathub-infra container (has flatpak + the runtime
+  # pre-installed and is privileged, so `flatpak --system` deploys are allowed).
+  release_flatpak:
+    name: Flatpak
+    runs-on: ubuntu-latest
+    needs: [release_linux]
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-24.08
+      options: --privileged
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download staged app-image
+        uses: actions/download-artifact@v4
+        with:
+          name: flatpak-app-image
+          path: flatpak/app
+
+      - name: Build Flatpak bundle
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: flatpak-manifest.json
+          bundle: build/flatpak/CloudStream-Desktop-0.0.2-beta.flatpak
+          cache: true
+
+      - name: Upload Flatpak bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-bundle
+          path: build/flatpak/*.flatpak
+          if-no-files-found: error
 
   publish:
     name: Publish Release
     runs-on: ubuntu-latest
-    needs: [release_windows, release_linux]
+    needs: [release_windows, release_linux, release_flatpak]
 
     steps:
     - name: Download all artifacts
@@ -177,6 +200,6 @@ jobs:
           artifacts/linux-packages/**/*.AppImage
           artifacts/linux-packages/**/*.rpm
           artifacts/linux-packages/**/*.deb
-          artifacts/linux-packages/**/*.flatpak
+          artifacts/flatpak-bundle/*.flatpak
         generate_release_notes: true
         make_latest: true
