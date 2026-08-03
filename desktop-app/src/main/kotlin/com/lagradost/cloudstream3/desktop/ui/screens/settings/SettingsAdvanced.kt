@@ -83,6 +83,7 @@ fun SettingsAdvanced() {
 
                 PathRow("App Data & Config", com.lagradost.common.platform.PlatformPaths.appDataDir)
                 PathRow("Extensions & Plugins", com.lagradost.common.platform.PlatformPaths.extensionsDir)
+                PathRow("Downloads", com.lagradost.common.platform.PlatformPaths.downloadsDir)
                 PathRow("Cache Data", com.lagradost.common.platform.PlatformPaths.cacheDir)
                 PathRow("System Logs", com.lagradost.common.platform.PlatformPaths.logsDir)
             }

@@ -221,6 +221,7 @@ private fun NavigationDock(
                     onClick = { onNavigate(Screen.Extensions) },
                 )
                 DockItem(icon = Icons.Default.LiveTv, label = "IPTV", selected = current is Screen.IPTV, onClick = { onNavigate(Screen.IPTV) })
+                DockItem(icon = Icons.Default.Download, label = "Downloads", selected = current is Screen.Downloads, onClick = { onNavigate(Screen.Downloads) })
                 DockItem(icon = Icons.Default.Settings, label = "Settings", selected = current is Screen.Settings, onClick = { onNavigate(Screen.Settings) })
             }
 

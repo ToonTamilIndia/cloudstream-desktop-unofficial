@@ -130,6 +130,12 @@ jobs:
         mkdir -p flatpak/app
         cp -r desktop-app/build/compose/binaries/main-release/app/CloudStream-Desktop flatpak/app/CloudStream-Desktop
 
+    - name: Install Flatpak tooling
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y flatpak flatpak-builder
+        flatpak --version
+
     - name: Build Flatpak (official action, user install)
       if: always()
       continue-on-error: true
@@ -137,9 +143,7 @@ jobs:
       with:
         manifest-path: flatpak-manifest.json
         bundle: build/flatpak/CloudStream-Desktop-0.0.2-beta.flatpak
-        cache: true
-
-    - name: Upload Linux artifacts
+        cache: true    - name: Upload Linux artifacts
       uses: actions/upload-artifact@v4
       with:
         name: linux-packages

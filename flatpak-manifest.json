@@ -1,5 +1,5 @@
 {
-  "id": "com.github.ToonTamilIndia.CloudStreamDesktop",
+  "id": "com.github.toontamilindia.cloudstreamdesktop",
   "appstream-compose": false,
   "runtime": "org.freedesktop.Platform",
   "runtime-version": "23.08",

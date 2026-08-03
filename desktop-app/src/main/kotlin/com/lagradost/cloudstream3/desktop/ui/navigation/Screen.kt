@@ -7,6 +7,7 @@ sealed class Screen {
     object Home : Screen()
     object Extensions : Screen()
     object Library : Screen()
+    object Downloads : Screen()
     object IPTV : Screen()
     object Settings : Screen()
     data class Details(val provider: MainAPI, val url: String, val preloadedName: String? = null, val preloadedPoster: String? = null, val preloadedBg: String? = null) : Screen()

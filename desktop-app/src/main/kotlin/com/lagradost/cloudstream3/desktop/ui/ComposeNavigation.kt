@@ -100,6 +100,13 @@ fun CloudstreamApp() {
                         ) {
                             com.lagradost.cloudstream3.desktop.ui.screens.ComposeIptvScreen()
                         }
+                        is Screen.Downloads -> DesktopAppShell(
+                            navController = navController,
+                            title = "Downloads",
+                            onErrorLogs = { showErrorsDialog = true },
+                        ) {
+                            com.lagradost.cloudstream3.desktop.ui.screens.ComposeDownloadsScreen()
+                        }
                         is Screen.Settings -> DesktopAppShell(
                             navController = navController,
                             title = "Settings",

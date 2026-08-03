@@ -126,8 +126,10 @@ object DownloadManager {
                 tasks[id] = task.copy(status = DownloadStatus.DOWNLOADING)
                 when {
                     stream.isM3u8 -> {
-                        val segments = fetchHlsSegments(stream.url, stream.headers)
-                        downloadAndConcat(segments, outFile, stream.headers, id)
+                        val master = parseHlsMaster(stream.url, stream.headers)
+                        val videoSegs = fetchHlsSegments(master.videoUri, stream.headers)
+                        val audioSegs = master.audioUri?.let { fetchHlsSegments(it, stream.headers) } ?: emptyList()
+                        downloadAndConcat(videoSegs, audioSegs, master.subtitles, outFile, stream.headers, id)
                     }
                     stream.isDash -> downloadStreamToFile(stream.url, outFile, stream.headers, id)
                     else -> downloadStreamToFile(stream.url, outFile, stream.headers, id)
@@ -187,8 +189,65 @@ object DownloadManager {
     }
 
     /**
-     * Fetch an HLS playlist, returning the ordered segment URLs.
-     * Resolves master playlists to the highest-bandwidth variant.
+     * Parse an HLS master playlist (or a plain media playlist) into the renditions we
+     * want for a download. Returns the chosen video variant URI plus an optional
+     * separate AUDIO rendition (default one) and any SUBTITLES renditions.
+     */
+    private suspend fun parseHlsMaster(playlistUrl: String, headers: Map<String, String>): HlsMaster {
+        val body = client.newCall(
+            Request.Builder().url(playlistUrl).apply { headers.forEach { (k, v) -> addHeader(k, v) } }.build()
+        ).execute().use { resp ->
+            if (!resp.isSuccessful) throw java.io.IOException("HTTP ${resp.code} fetching playlist")
+            resp.body!!.string()
+        }
+
+        val base = playlistUrl.substringBeforeLast('/') + "/"
+
+        // Master playlist -> resolve to best variant, then also grab default AUDIO + SUBTITLES renditions.
+        if (body.contains("#EXT-X-STREAM-INF")) {
+            val variants = Regex("""#EXT-X-STREAM-INF[^\n]*\n([^\n]+)""").findAll(body).map { m ->
+                val uri = m.groupValues[1].trim()
+                val band = Regex("""BANDWIDTH=(\d+)""").find(m.groupValues[0])?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+                MediaVariant(uri, band)
+            }.toList()
+            val best = variants.maxByOrNull { it.bandwidth } ?: return HlsMaster(playlistUrl, null, emptyList())
+
+            val mediaEntries = Regex("""#EXT-X-MEDIA:([^\n]+)""").findAll(body).map { m ->
+                parseMediaEntry(m.groupValues[1])
+            }.filterNotNull().toList()
+
+            val audioEntries = mediaEntries.filter { it.type == "AUDIO" && it.uri != null }
+            val audioEntry = audioEntries.firstOrNull { it.default } ?: audioEntries.firstOrNull()
+            val audioUri = audioEntry?.uri?.let { resolve(base, it) }
+
+            val subtitles = mediaEntries.filter { it.type == "SUBTITLES" && it.uri != null }
+                .map { HlsSubtitle(it.name, resolve(base, it.uri!!)) }
+
+            return HlsMaster(resolve(base, best.uri), audioUri, subtitles)
+        }
+
+        // Plain media playlist (audio already muxed in the same rendition).
+        return HlsMaster(playlistUrl, null, emptyList())
+    }
+
+    private data class HlsMediaEntry(val type: String, val name: String, val uri: String?, val default: Boolean)
+
+    private fun parseMediaEntry(raw: String): HlsMediaEntry? {
+        val attrs = Regex("""([A-Z0-9\-]+)=(?:"([^"]*)"|([^,]*))""").findAll(raw)
+            .associate { m -> m.groupValues[1] to (m.groupValues[2].ifEmpty { m.groupValues[3] }) }
+        if (attrs["TYPE"].isNullOrBlank()) return null
+        val type = attrs["TYPE"]!!
+        val name = attrs["NAME"] ?: type
+        return HlsMediaEntry(
+            type = type,
+            name = name,
+            uri = attrs["URI"],
+            default = attrs["DEFAULT"]?.equals("YES", ignoreCase = true) ?: false,
+        )
+    }
+
+    /**
+     * Fetch an HLS media playlist, returning the ordered segment URLs.
      */
     private suspend fun fetchHlsSegments(playlistUrl: String, headers: Map<String, String>): List<String> {
         val body: String = client.newCall(
@@ -199,17 +258,6 @@ object DownloadManager {
         }
 
         val base = playlistUrl.substringBeforeLast('/') + "/"
-
-        // Master playlist -> resolve to best variant, then fetch its media playlist.
-        if (body.contains("#EXT-X-STREAM-INF")) {
-            val variants = Regex("""#EXT-X-STREAM-INF[^\n]*\n([^\n]+)""").findAll(body).map { m ->
-                val uri = m.groupValues[1].trim()
-                val band = Regex("""BANDWIDTH=(\d+)""").find(m.groupValues[0])?.groupValues?.get(1)?.toLongOrNull() ?: 0L
-                MediaVariant(uri, band)
-            }.toList()
-            val best = variants.maxByOrNull { it.bandwidth } ?: return emptyList()
-            return fetchHlsSegments(resolve(base, best.uri), headers)
-        }
 
         if (body.contains("#EXT-X-KEY") && !body.contains("#EXT-X-KEY:METHOD=NONE")) {
             throw java.io.IOException("Encrypted HLS (AES-128) is not supported by the downloader")
@@ -222,20 +270,24 @@ object DownloadManager {
     }
 
     private suspend fun downloadAndConcat(
-        segments: List<String>,
+        videoSegments: List<String>,
+        audioSegments: List<String>,
+        subtitles: List<HlsSubtitle>,
         outFile: File,
         headers: Map<String, String>,
         taskId: String,
     ) {
-        if (segments.isEmpty()) throw java.io.IOException("No HLS segments found")
-        val total = segments.size.toLong()
+        if (videoSegments.isEmpty()) throw java.io.IOException("No HLS segments found")
+        val total = videoSegments.size.toLong()
         var done = 0L
         outFile.parentFile?.mkdirs()
         java.nio.file.Files.newOutputStream(outFile.toPath()).buffered().use { out ->
             var totalBytes = 0L
-            segments.forEachIndexed { idx, segUrl ->
-                ensureActive(taskId)
-                val req = Request.Builder().url(segUrl).apply { headers.forEach { (k, v) -> addHeader(k, v) } }.build()
+
+            // Download audio segments first (one per segment index) so the .ts file
+            // carries both the video PID and the audio PID.
+            suspend fun writeSegment(url: String, idx: Int) {                ensureActive(taskId)
+                val req = Request.Builder().url(url).apply { headers.forEach { (k, v) -> addHeader(k, v) } }.build()
                 client.newCall(req).execute().use { resp ->
                     if (!resp.isSuccessful) throw java.io.IOException("HTTP ${resp.code} fetching segment $idx")
                     totalBytes += resp.body!!.byteStream().use { input -> input.copyTo(out) }
@@ -245,13 +297,42 @@ object DownloadManager {
                     it.copy(
                         bytesDownloaded = totalBytes,
                         totalBytes = totalBytes,
-                        progress = done.toDouble() / total,
+                        progress = done.toDouble() / (total * 2),
                     )
                 }
+            }
+
+            val maxLen = maxOf(videoSegments.size, audioSegments.size)
+            for (i in 0 until maxLen) {
+                if (i < audioSegments.size) writeSegment(audioSegments[i], i)
+                if (i < videoSegments.size) writeSegment(videoSegments[i], i)
             }
             out.flush()
         }
         if (cancelled.contains(taskId)) outFile.delete()
+
+        // Subtitles cannot be muxed into an MPEG-TS container, so save them alongside.
+        if (subtitles.isNotEmpty()) {
+            outFile.parentFile?.mkdirs()
+            val stem = outFile.nameWithoutExtension
+            subtitles.forEachIndexed { idx, sub ->
+                ensureActive(taskId)
+                val subOut = File(outFile.parentFile, "$stem.${sub.name.replace(Regex("""[^A-Za-z0-9_.-]"""), "_")}.vtt")
+                try {
+                    val segs = fetchHlsSegments(sub.uri, headers)
+                    java.nio.file.Files.newOutputStream(subOut.toPath()).buffered().use { sOut ->
+                        val req = Request.Builder().url(segs.first()).apply { headers.forEach { (k, v) -> addHeader(k, v) } }.build()
+                        client.newCall(req).execute().use { resp ->
+                            if (!resp.isSuccessful) throw java.io.IOException("HTTP ${resp.code} fetching subtitle")
+                            resp.body!!.byteStream().copyTo(sOut)
+                        }
+                    }
+                } catch (e: Throwable) {
+                    subOut.delete()
+                    AppLogger.e("Failed to download subtitle ${sub.name}", e)
+                }
+            }
+        }
     }
 
     private fun resolve(base: String, uri: String): String {
@@ -275,4 +356,12 @@ object DownloadManager {
     }
 
     private data class MediaVariant(val uri: String, val bandwidth: Long)
+
+    private data class HlsSubtitle(val name: String, val uri: String)
+
+    private data class HlsMaster(
+        val videoUri: String,
+        val audioUri: String?,
+        val subtitles: List<HlsSubtitle>,
+    )
 }
