@@ -98,6 +98,31 @@ jobs:
         ./gradlew desktop-app:packageReleaseRpm
         ./gradlew desktop-app:packageReleaseDeb
 
+    # packageReleaseAppImage only emits the jpackage app-image directory; squash it into a
+    # self-extracting .AppImage with appimagetool (installed above, runs via extraction).
+    - name: Build .AppImage (appimagetool)
+      run: |
+        set -e
+        APP_IMAGE_DIR=desktop-app/build/compose/binaries/main-release/app/CloudStream-Desktop
+        OUT=desktop-app/build/compose/binaries/main-release/CloudStream-Desktop-0.0.2-beta.AppImage
+        rm -rf AppDir
+        mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+        cp -r "$APP_IMAGE_DIR" AppDir/CloudStream-Desktop
+        cp desktop-app/src/main/resources/logo_ui.png AppDir/usr/share/icons/hicolor/256x256/apps/logo_ui.png
+        cp desktop-app/src/main/resources/logo_ui.png AppDir/logo_ui.png
+        cat > AppDir/CloudStream-Desktop.desktop <<'EOF'
+        [Desktop Entry]
+        Type=Application
+        Name=CloudStream Desktop
+        Comment=CloudStream Desktop Client
+        Exec=CloudStream-Desktop/bin/CloudStream-Desktop
+        Icon=logo_ui
+        Categories=AudioVideo;Video;Player;
+        Terminal=false
+        X-AppImage-Version=0.0.2-beta
+        EOF
+        ARCH=x86_64 /usr/local/bin/appimagetool AppDir "$OUT"
+
     - name: Stage app-image for Flatpak (best-effort)
       continue-on-error: true
       run: |

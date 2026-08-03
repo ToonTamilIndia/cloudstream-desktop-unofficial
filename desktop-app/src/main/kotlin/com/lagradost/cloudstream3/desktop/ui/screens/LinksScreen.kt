@@ -14,8 +14,11 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -491,7 +494,11 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
                                             val pct = (dl.fraction * 100).toInt()
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Text(
-                                                "${pct}% · ${dl.bytesDownloaded} bytes",
+                                                if (dl.totalBytes > 0) {
+                                                    "${pct}% · ${formatBytes(dl.bytesDownloaded)} / ${formatBytes(dl.totalBytes)}"
+                                                } else {
+                                                    "${pct}% · ${formatBytes(dl.bytesDownloaded)}"
+                                                },
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = DesktopUi.TextMuted,
                                             )
@@ -600,6 +607,17 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
             }
         }
     }
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024) return String.format("%.1f KB", kb)
+    val mb = kb / 1024.0
+    if (mb < 1024) return String.format("%.1f MB", mb)
+    val gb = mb / 1024.0
+    if (gb < 1024) return String.format("%.2f GB", gb)
+    return String.format("%.2f TB", gb / 1024.0)
+}
 
 @Composable
 private fun StreamStatusCard(
@@ -759,30 +777,27 @@ private fun StreamLinkCard(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            OutlinedButton(
+            IconButton(
                 onClick = onCopy,
                 enabled = !isBusy,
-                shape = RoundedCornerShape(10.dp),
             ) {
-                Text("Copy")
+                Icon(Icons.Default.ContentCopy, contentDescription = "Copy URL", modifier = Modifier.size(18.dp), tint = DesktopUi.TextMuted)
             }
-            Spacer(modifier = Modifier.width(8.dp))
-            OutlinedButton(
+            Spacer(modifier = Modifier.width(4.dp))
+            IconButton(
                 onClick = onProxyPlay,
                 enabled = !isBusy,
-                shape = RoundedCornerShape(10.dp),
             ) {
-                Text("Proxy")
+                Icon(Icons.Default.SwapHoriz, contentDescription = "Play through proxy", modifier = Modifier.size(18.dp), tint = DesktopUi.TextMuted)
             }
-            Spacer(modifier = Modifier.width(8.dp))
-            OutlinedButton(
+            Spacer(modifier = Modifier.width(4.dp))
+            IconButton(
                 onClick = onDownload,
                 enabled = !isBusy,
-                shape = RoundedCornerShape(10.dp),
             ) {
-                Text("Download")
+                Icon(Icons.Default.Download, contentDescription = "Download", modifier = Modifier.size(18.dp), tint = DesktopUi.TextMuted)
             }
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(4.dp))
             Button(
                 onClick = onPlay,
                 enabled = !isBusy,
