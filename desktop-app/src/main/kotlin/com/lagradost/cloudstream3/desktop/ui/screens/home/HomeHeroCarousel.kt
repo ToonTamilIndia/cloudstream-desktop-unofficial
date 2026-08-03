@@ -44,6 +44,7 @@ data class HeroMeta(
     val plot: String?,
     val score: String?,
     val year: Int?,
+    val title: String? = null,
 )
 
 object HeroCache {
@@ -109,6 +110,7 @@ fun HomeHeroCarousel(items: List<SearchResponse>, provider: MainAPI?, onItemClic
                     var plot: String? = null
                     var score: String? = null
                     var year: Int? = null
+                    var title: String? = null
 
                     try {
                         val enriched = provider?.load(item.url)
@@ -118,6 +120,11 @@ fun HomeHeroCarousel(items: List<SearchResponse>, provider: MainAPI?, onItemClic
                             plot = enriched.plot?.take(200)
                             score = enriched.score?.toStringNull(0.5, 10)
                             year = enriched.year
+                            // Some providers (e.g. CNC mirror providers) return homepage items
+                            // with an empty name. The details load knows the real title — use it.
+                            if (item.name.isBlank() && enriched.name.isNotBlank()) {
+                                title = enriched.name
+                            }
                         }
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
@@ -161,6 +168,7 @@ fun HomeHeroCarousel(items: List<SearchResponse>, provider: MainAPI?, onItemClic
                             }
 
                             if (match != null) {
+                                if (title == null && match.name.isNotBlank()) title = match.name
                                 val tmdbEnriched = tmdb.load(match.url)
                                 if (tmdbEnriched != null) {
                                     if (backdropUrl == null) {
@@ -182,7 +190,7 @@ fun HomeHeroCarousel(items: List<SearchResponse>, provider: MainAPI?, onItemClic
                         }
                     }
 
-                    val meta = HeroMeta(backdropUrl, tags, plot, score, year)
+                    val meta = HeroMeta(backdropUrl, tags, plot, score, year, title)
                     HeroCache.cache[cacheKey] = meta
                     metaMap[item.url] = meta
                 } catch (e: kotlinx.coroutines.CancellationException) {
@@ -309,13 +317,16 @@ fun HomeHeroCarousel(items: List<SearchResponse>, provider: MainAPI?, onItemClic
                     Column(
                         modifier = Modifier.fillMaxWidth(0.65f), // Take up remaining space comfortably
                     ) {
-                        // Content-type badge
+                        // Content-type badge (Anime/AnimeMovie intentionally omit their badge)
                         item.type?.let { tvType ->
+                            if (tvType == com.lagradost.cloudstream3.TvType.Anime ||
+                                tvType == com.lagradost.cloudstream3.TvType.AnimeMovie
+                            ) {
+                                return@let
+                            }
                             val typeLabel = when (tvType) {
                                 com.lagradost.cloudstream3.TvType.Movie -> "MOVIE"
                                 com.lagradost.cloudstream3.TvType.TvSeries -> "SERIES"
-                                com.lagradost.cloudstream3.TvType.Anime -> "ANIME"
-                                com.lagradost.cloudstream3.TvType.AnimeMovie -> "ANIME FILM"
                                 com.lagradost.cloudstream3.TvType.Live -> "LIVE"
                                 else -> tvType.name.uppercase()
                             }
@@ -337,9 +348,9 @@ fun HomeHeroCarousel(items: List<SearchResponse>, provider: MainAPI?, onItemClic
                             Spacer(Modifier.height(12.dp))
                         }
 
-                        // Title
+                        // Title (fall back to the enriched title when the provider left it blank)
                         Text(
-                            text = cleanHeroTitle(item.name),
+                            text = cleanHeroTitle(meta?.title?.takeIf { it.isNotBlank() } ?: item.name),
                             style = MaterialTheme.typography.displayMedium,
                             fontWeight = FontWeight.ExtraBold,
                             color = Color.White,

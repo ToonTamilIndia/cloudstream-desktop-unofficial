@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Launch4j configuration for CloudStream Desktop.
+
+  Fixes "Failed to launch JVM":
+  - Launch4j throws that error when the <jre> section is missing or no compatible JRE
+    can be found on the target machine.
+  - If the JAR is NOT a fat jar you also get an immediate JVM crash (ClassNotFoundError)
+    because the dependencies aren't bundled. Use `gradlew :desktop-app:fatJar` first.
+  - The <bundledJrePath> below lets you ship a JRE alongside the exe for a fully
+    self-contained app. Copy the runtime from the Compose distribution:
+        xcopy /E /I "desktop-app\build\compose\binaries\main\app\CloudStream-Desktop\runtime" "%EXEDIR%\jre"
+    If the jre folder is absent Launch4j falls back to the minVersion search on PATH.
+-->
+<launch4jConfig>
+  <headerType>gui</headerType>
+  <outfile>CloudStream-Desktop.exe</outfile>
+  <jar>desktop-app\build\libs\CloudStream-Desktop-all.jar</jar>
+  <icon>desktop-app\src\main\resources\logo_installer.ico</icon>
+  <stayAlive>false</stayAlive>
+  <restartOnCrash>false</restartOnCrash>
+  <singleInstance>false</singleInstance>
+  <jre>
+    <bundledJrePath>%EXEDIR%\jre</bundledJrePath>
+    <minVersion>21</minVersion>
+    <maxVersion>99</maxVersion>
+    <jvmOptions>
+      <option>-Djava.security.manager=allow</option>
+      <option>-Dcloudstream.version=0.0.1-beta</option>
+    </jvmOptions>
+  </jre>
+  <dontWrapJar>false</dontWrapJar>
+</launch4jConfig>

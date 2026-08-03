@@ -37,7 +37,7 @@ fun Route.registerSettingsRoutes() {
     get("/api/settings") {
         call.respondJson(mapOf(
             "global_search_enabled" to (DesktopDataStore.getKey<Boolean>("global_search_enabled") ?: false),
-            "doh_provider" to (DesktopDataStore.getKey<Int>("doh_provider") ?: 0),
+            "doh_provider" to (DesktopDataStore.getKey<Int>("doh_provider") ?: 2),
         ))
     }
 

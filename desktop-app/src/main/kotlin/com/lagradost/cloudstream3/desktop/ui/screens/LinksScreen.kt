@@ -164,12 +164,18 @@ fun LinksSidePanel(provider: MainAPI, dataUrl: String, history: WatchHistory, on
         ).apply { quality = link.quality }
     }
 
-    val playLink: (link: ExtractorLink, useProxy: Boolean) -> Unit = { link, useProxy ->
+    val playLink: (link: ExtractorLink, requestedProxy: Boolean) -> Unit = { link, requestedProxy ->
         if (!(isLaunchingPlayer && currentPlayingUrl == null)) {
             isLaunchingPlayer = true
             currentPlayingUrl = link.url
             val effectivePlayer = selectedPlayer
             statusText = "Launching ${selectedPlayer.uppercase()}..."
+
+            // HLS/DASH streams are always routed through the LocalStreamProxy so that the
+            // plugin's auth headers are injected on every segment request and Cloudflare
+            // anti-bot challenges are solved via CloudflareKiller (Playwright). Playing the
+            // raw CDN URL directly (e.g. in external MPV) hits HTTP 403 on protected CDNs.
+            val useProxy = requestedProxy || link.isM3u8 || link.isDash
 
             val latestHistory = DesktopDataStore.getEpisodeWatched(history.parentId, history.episodeId) ?: history
             val startSec = PlayerLinkHandler.resumeStartSeconds(latestHistory.position, latestHistory.duration)

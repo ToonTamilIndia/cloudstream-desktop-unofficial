@@ -163,6 +163,31 @@ val stripPlaywrightDriver by tasks.registering {
     }
 }
 
+// Build a single self-contained (fat) JAR with every runtime dependency merged inside.
+// This is the file you wrap with Launch4j (or run via `java -jar`) to produce a Windows
+// .exe without relying on the Gradle/jlink distribution layout.
+val fatJar by tasks.registering(Jar::class) {
+    description = "Builds a standalone runnable JAR with all dependencies merged in."
+    group = "build"
+    archiveBaseName.set("CloudStream-Desktop")
+    archiveClassifier.set("all")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes["Main-Class"] = "com.lagradost.cloudstream3.desktop.MainKt"
+        attributes["Implementation-Title"] = "CloudStream Desktop"
+        attributes["Implementation-Version"] = (project.findProperty("APP_VERSION") ?: "0.0.0")
+    }
+    from(sourceSets.main.get().output)
+    dependsOn(configurations.runtimeClasspath)
+    from({
+        configurations.runtimeClasspath.get().filter { it.name.endsWith("jar") }.map { zipTree(it) }
+    }) {
+        exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+        exclude("META-INF/versions/*/module-info.class", "module-info.class")
+    }
+    dependsOn(stripPlaywrightDriver)
+}
+
 // Compose Desktop application configuration
 compose.desktop {
     application {

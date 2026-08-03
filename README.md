@@ -111,5 +111,16 @@ The compiled installer will be generated at `desktop-app/build/compose/binaries/
 > [!NOTE]  
 > The Gradle script includes an automated `stripPlaywrightDriver` task. When you build the MSI, it will automatically unpack the `com.microsoft.playwright:driver-bundle` dependency, strip out the macOS and Linux Node.js binaries, and repackage it. This safely strips out redundant OS binaries without breaking Cloudflare bypassing on Windows, helping to keep the large bundled JVM + MPV installer as optimized as possible.
 
+**6. Building a standalone JAR / Windows EXE (Launch4j):**
+If you prefer a single portable JAR (e.g. to wrap with Launch4j) instead of an installer:
+```bash
+./gradlew desktop-app:fatJar
+```
+This produces `desktop-app/build/libs/CloudStream-Desktop-all.jar` — a fully self-contained runnable jar (all dependencies merged, `Main-Class` set). Run it with:
+```bash
+java -Djava.security.manager=allow -jar CloudStream-Desktop-all.jar
+```
+To wrap it into a Windows `.exe` without users needing Java installed, use `package-exe.bat` on Windows (builds the fat jar, copies a bundled JRE next to the exe, and runs Launch4j with the included `launch4j.xml`). The Launch4j config already contains the `<jre>` section with `minVersion 21` + `bundledJrePath` — a missing `<jre>` block (or a non-fat jar) is exactly what causes Launch4j's "Failed to launch JVM" error.
+
 ## 🙏 Acknowledgements
 Significant acknowledgement is given to the original CloudStream developers and contributors. This project utilizes their core scraping engine and extension architecture as a foundation.
