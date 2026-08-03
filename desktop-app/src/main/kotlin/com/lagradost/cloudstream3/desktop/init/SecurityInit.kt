@@ -17,7 +17,13 @@ fun initSecurity() {
     }
 
     // BouncyCastle security provider
-    java.security.Security.insertProviderAt(org.bouncycastle.jce.provider.BouncyCastleProvider(), 1)
+    // Append (not insert-at-position-1) so the JDK's SunEC provider keeps ownership of
+    // X25519/XDH. Registering BC first causes BC's BCXDHPublicKey to be returned for
+    // XDH/X25519 and then fail a cast to java.security.interfaces.XECPublicKey.
+    java.security.Security.insertProviderAt(
+        org.bouncycastle.jce.provider.BouncyCastleProvider(),
+        java.security.Security.getProviders().size + 1,
+    )
     AppLogger.i("Registered BouncyCastle Security Provider")
 
     // Pre-initialize DataStore

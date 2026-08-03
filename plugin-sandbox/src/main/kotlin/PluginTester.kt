@@ -49,7 +49,7 @@ fun main(args: Array<String>) {
         com.lagradost.player.impl.proxy.LocalStreamProxy.start()
 
         // Security Providers
-        java.security.Security.insertProviderAt(org.bouncycastle.jce.provider.BouncyCastleProvider(), 1)
+        java.security.Security.insertProviderAt(org.bouncycastle.jce.provider.BouncyCastleProvider(), java.security.Security.getProviders().size + 1)
 
         // DataStore
         com.lagradost.common.storage.DesktopDataStore.init()

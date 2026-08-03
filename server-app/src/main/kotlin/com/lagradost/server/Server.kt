@@ -83,7 +83,7 @@ private fun initServerServices() {
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             AppLogger.e("Unhandled exception in ${thread.name}", throwable)
         }
-        java.security.Security.insertProviderAt(org.bouncycastle.jce.provider.BouncyCastleProvider(), 1)
+        java.security.Security.insertProviderAt(org.bouncycastle.jce.provider.BouncyCastleProvider(), java.security.Security.getProviders().size + 1)
         DesktopDataStore.init()
     } catch (e: Exception) {
         AppLogger.e("Security init failed", e)

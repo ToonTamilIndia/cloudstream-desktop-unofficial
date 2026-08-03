@@ -73,6 +73,14 @@ dependencies {
 
     // Compose Desktop UI
     implementation(compose.desktop.currentOs)
+    // Bundle Skiko native runtimes for ALL supported platforms into the fat JAR.
+    // A fat JAR built on Linux only contains the Linux Skiko native by default,
+    // which crashes on Windows ("Cannot find skiko-windows-x64.dll"). Including
+    // the Windows runtime lets the same self-contained JAR run on both OSes.
+    implementation("org.jetbrains.skiko:skiko-awt-runtime-windows-x64:0.8.18")
+    implementation("org.jetbrains.skiko:skiko-awt-runtime-macos-x64:0.8.18")
+    implementation("org.jetbrains.skiko:skiko-awt-runtime-macos-arm64:0.8.18")
+    implementation("org.jetbrains.skiko:skiko-awt-runtime-linux-arm64:0.8.18")
     implementation(compose.material3)  // material3 already includes core icons
     implementation(compose.materialIconsExtended)
     implementation(compose.ui)
@@ -89,6 +97,10 @@ dependencies {
         System.getProperty("os.arch").lowercase().contains("aarch64") -> "linux-aarch64"
         else -> "linux"
     }
+    // JavaFX is only used for the embedded WebView (JW Playright backend); it is NOT
+    // required to open the Compose/Skiko UI. Ship the Linux JavaFX runtime for the
+    // per-OS native distributions (Deb/Rpm/AppImage), while the fat JAR relies on
+    // Skiko natives (above) to render the desktop UI on every platform.
     implementation("org.openjfx:javafx-base:$javafxVersion:$javafxPlatform")
     implementation("org.openjfx:javafx-graphics:$javafxVersion:$javafxPlatform")
     implementation("org.openjfx:javafx-controls:$javafxVersion:$javafxPlatform")
