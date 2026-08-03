@@ -120,7 +120,39 @@ This produces `desktop-app/build/libs/CloudStream-Desktop-all.jar` — a fully s
 ```bash
 java -Djava.security.manager=allow -jar CloudStream-Desktop-all.jar
 ```
-To wrap it into a Windows `.exe` without users needing Java installed, use `package-exe.bat` on Windows (builds the fat jar, copies a bundled JRE next to the exe, and runs Launch4j with the included `launch4j.xml`). The Launch4j config already contains the `<jre>` section with `minVersion 21` + `bundledJrePath` — a missing `<jre>` block (or a non-fat jar) is exactly what causes Launch4j's "Failed to launch JVM" error.
+To wrap it into a Windows `.exe` without users needing Java installed, use `package-exe.bat` on Windows (builds the fat jar, copies a bundled JRE next to the exe, and runs Launch4j with the included `launch4j.xml`).
+
+---
+
+## 📦 Release & Packaging
+
+### Cross-platform Skiko / BouncyCastle fixes
+The distributable fat JAR bundles **Skiko natives for every platform** (`skiko-windows-x64.dll`, `libskiko-linux-x64.so`, macOS `dylib`s), so the Compose/Skia desktop UI opens correctly on Linux **and** Windows. BouncyCastle is registered *after* the JDK's `SunEC` provider so the built-in provider keeps ownership of X25519/XDH — this prevents the `BCXDHPublicKey cannot be cast to XECPublicKey` crash during search/loads.
+
+### Release formats
+
+| Artifact | Build tool | Platform |
+|----------|-----------|----------|
+| `CloudStream-Desktop-0.0.1-beta.jar` (fat, cross-platform) | Gradle `fatJar` | Linux / Windows |
+| `CloudStream-Desktop.exe` + bundled `jre/` | Launch4j (wraps the fat jar) | Windows |
+| `CloudStream-Desktop-0.0.1-beta.AppImage` | Gradle `packageAppImage` (jpackage) | Linux |
+| `CloudStream-Desktop-0.0.1-beta.x86_64.rpm` | Gradle `packageReleaseRpm` (jpackage) | Linux (Fedora/openSUSE) |
+| `.deb` | Gradle `packageReleaseDeb` (jpackage) | Linux (Debian/Ubuntu) |
+| `CloudStream-Desktop.msi` | Gradle `packageMsi` (jpackage) | Windows |
+
+> **jpackage vs GraalVM Native Image:** a true Native Image is not practical for CloudStream Desktop — it loads arbitrary user extensions at runtime (open-world dynamic classloading/reflection) and depends on Skiko/Skia, JavaFX WebView, Playwright, and JNA-linked `libmpv-2.dll`. jpackage (JDK 14+, bundled with JDK 21) is the supported, reproducible path. Note jpackage only targets the OS it runs on, so each format is produced by its matching CI runner.
+
+### Automated release (GitHub Actions)
+Pushing a `v*` tag (e.g. `v0.0.1-beta`) triggers `.github/workflows/release.yml`, which builds on native runners and attaches release assets:
+- **Windows** (`windows-latest`): downloads `libmpv-2.dll`, runs `packageReleaseMsi` → MSI.
+- **Linux** (`ubuntu-latest`): installs `rpmbuild` + `fpm`, runs `packageReleaseAppImage` / `packageReleaseRpm` / `packageReleaseDeb` → AppImage / rpm / deb.
+
+To trigger a release:
+```bash
+git tag v0.0.1-beta
+git push origin v0.0.1-beta
+```
+The latest release is available at https://github.com/ToonTamilIndia/cloudstream-desktop-unofficial/releases.
 
 ## 🙏 Acknowledgements
 Significant acknowledgement is given to the original CloudStream developers and contributors. This project utilizes their core scraping engine and extension architecture as a foundation.
